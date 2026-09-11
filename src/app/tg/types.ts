@@ -58,6 +58,8 @@ export type CabinetData = {
     telegramId: string;
     status: string;
     createdAt?: string;
+    role?: string;
+    refSource?: string;
     issues?: Array<{
       id: string;
       status: string;

@@ -432,7 +432,10 @@ export default function TelegramMiniAppPage() {
                 ) : null}
 
                 {tab === "people" && displayCabinet ? (
-                  <PeopleTab referrals={displayCabinet.referrals} />
+                  <PeopleTab
+                    referrals={displayCabinet.referrals}
+                    allChannel={showAdmin}
+                  />
                 ) : null}
 
                 {tab === "withdraw" && displayCabinet ? (

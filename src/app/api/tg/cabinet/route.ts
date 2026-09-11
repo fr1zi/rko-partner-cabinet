@@ -44,10 +44,14 @@ export async function GET() {
     where: { isActive: true },
     orderBy: { createdAt: "asc" },
   });
+  const isAdminCabinet = user.role === "admin";
   const refs = await prisma.botUser.findMany({
-    where: { referrerId: user.id },
+    where: isAdminCabinet ? {} : { referrerId: user.id },
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: isAdminCabinet ? 300 : 50,
+    include: {
+      referrer: { select: { username: true, firstName: true } },
+    },
   });
   const withdrawals = await prisma.withdrawal.findMany({
     where: { userId: user.id },
@@ -80,6 +84,7 @@ export async function GET() {
         status = "approved";
       else if (st.some((s) => s === "processing" || s === "new" || s === "duplicate"))
         status = "pending";
+      const refUser = r.referrer;
       return {
         id: r.id,
         username: r.username,
@@ -87,6 +92,15 @@ export async function GET() {
         telegramId: r.telegramId,
         status,
         createdAt: r.createdAt,
+        role: r.role,
+        refSource:
+          refUser?.username ||
+          refUser?.firstName ||
+          (isAdminCabinet
+            ? r.referrerId
+              ? "траффер"
+              : "Админы"
+            : undefined),
         issues: ls.map((x) => ({
           id: x.id,
           status: x.status,
