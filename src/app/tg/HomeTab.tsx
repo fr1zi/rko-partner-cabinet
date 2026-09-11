@@ -4,14 +4,24 @@ import { useState } from "react";
 import type { CabinetData, TgRole } from "./types";
 import { money } from "./utils";
 
+export type AdminHomeStats = {
+  trafters?: number;
+  clients?: number;
+  leads?: number;
+  credited?: number;
+  creditedLabel?: string;
+};
+
 export function HomeTab({
   data,
   role,
   channelMember,
+  adminStats,
 }: {
   data: CabinetData;
   role?: TgRole;
   channelMember?: boolean;
+  adminStats?: AdminHomeStats | null;
 }) {
   const [copied, setCopied] = useState(false);
   const isSubscriber = role === "SUBSCRIBER";
@@ -28,17 +38,39 @@ export function HomeTab({
     }
   }
 
-
   if (isAdmin) {
+    const s = adminStats || {};
+    const tiles = [
+      { label: "Трафферы", value: String(s.trafters ?? 0) },
+      { label: "Клиенты", value: String(s.clients ?? 0) },
+      { label: "Заявки", value: String(s.leads ?? 0) },
+      {
+        label: "Начислено",
+        value: String(s.creditedLabel ?? money(Number(s.credited ?? 0))),
+        wide: true,
+      },
+    ];
     return (
       <div className="tg-stack">
         <section className="tg-card">
-          <h2 className="tg-card-title">Кабинет админа</h2>
+          <h2 className="tg-card-title">Сводка канала</h2>
           <p className="tg-muted text-sm mt-2 leading-relaxed">
-            Превью продуктов и вкладка «Админ»: итоги, цены, премии, заявки,
-            выводы и юзеры. Личная реф-ссылка и баланс траффера сюда не
-            подмешиваются.
+            Живые цифры по боту и каналу. Детали — во вкладке «Админ».
           </p>
+        </section>
+        <section>
+          <h2 className="tg-section-label">Итоги</h2>
+          <div className="tg-stat-grid">
+            {tiles.map((t) => (
+              <div
+                key={t.label}
+                className={t.wide ? "tg-stat-tile tg-stat-wide" : "tg-stat-tile"}
+              >
+                <p className="tg-stat-label">{t.label}</p>
+                <p className="tg-stat-value">{t.value}</p>
+              </div>
+            ))}
+          </div>
         </section>
         <a
           className="tg-btn-secondary w-full text-center"
@@ -48,24 +80,6 @@ export function HomeTab({
         >
           Канал @w1nstr1k3
         </a>
-        <section>
-          <h2 className="tg-section-label">Продукты (как у подписчика)</h2>
-          <div className="tg-stack">
-            {data.products.slice(0, 3).map((p) => (
-              <article key={p.id} className="tg-card tg-product">
-                <div className="tg-product-title-row">
-                  <p className="tg-card-title">{p.title}</p>
-                </div>
-                <div className="tg-money-plate">
-                  <span className="tg-money-plate-label">Цена</span>
-                  <span className="tg-money-plate-value">
-                    {money(p.subscriberPrice)}
-                  </span>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
       </div>
     );
   }

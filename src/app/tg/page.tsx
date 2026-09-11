@@ -348,6 +348,17 @@ export default function TelegramMiniAppPage() {
                         ? auth.channelMember
                         : true
                     }
+                    adminStats={
+                      (adminData?.stats as
+                        | {
+                            trafters?: number;
+                            clients?: number;
+                            leads?: number;
+                            credited?: number;
+                            creditedLabel?: string;
+                          }
+                        | undefined) || null
+                    }
                   />
                 ) : null}
 
