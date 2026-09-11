@@ -36,23 +36,56 @@ const BG = "#070b12";
 
 function useTelegramBoot(onReady: (initData: string) => void) {
   const [scriptReady, setScriptReady] = useState(false);
+
   useEffect(() => {
-    if (!scriptReady) return;
-    const wa = window.Telegram?.WebApp;
-    if (!wa) {
-      onReady("");
-      return;
-    }
-    wa.ready();
-    wa.expand();
-    try {
-      wa.setHeaderColor?.(BG);
-      wa.setBackgroundColor?.(BG);
-    } catch {
-      /* older clients */
-    }
-    onReady(wa.initData || "");
+    let done = false;
+    const finish = (initData: string) => {
+      if (done) return;
+      done = true;
+      onReady(initData);
+    };
+
+    const applyWebApp = () => {
+      const wa = window.Telegram?.WebApp;
+      if (!wa) return false;
+      try {
+        wa.ready();
+        wa.expand();
+        wa.setHeaderColor?.(BG);
+        wa.setBackgroundColor?.(BG);
+      } catch {
+        /* older clients */
+      }
+      finish(wa.initData || "");
+      return true;
+    };
+
+    // Already injected (Desktop sometimes has it before script onLoad)
+    if (applyWebApp()) return;
+
+    if (scriptReady && applyWebApp()) return;
+
+    // Poll briefly — Telegram Desktop may inject WebApp after the script tag
+    const started = Date.now();
+    const poll = window.setInterval(() => {
+      if (applyWebApp() || Date.now() - started > 2500) {
+        window.clearInterval(poll);
+        if (!done) finish(window.Telegram?.WebApp?.initData || "");
+      }
+    }, 100);
+
+    // Hard stop so PC / blocked telegram.org CDN never spins forever
+    const hard = window.setTimeout(() => {
+      window.clearInterval(poll);
+      if (!done) finish(window.Telegram?.WebApp?.initData || "");
+    }, 3000);
+
+    return () => {
+      window.clearInterval(poll);
+      window.clearTimeout(hard);
+    };
   }, [scriptReady, onReady]);
+
   return setScriptReady;
 }
 
@@ -256,6 +289,9 @@ export default function TelegramMiniAppPage() {
           <div className="tg-boot">
             <div className="tg-spinner" />
             <p className="tg-muted text-sm mt-3">Загрузка кабинета…</p>
+            <p className="tg-muted text-xs mt-2 text-center px-6">
+              Если долго — открой из бота @rko_referal_bot, не из браузера
+            </p>
           </div>
         ) : null}
 

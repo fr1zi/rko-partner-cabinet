@@ -25,7 +25,12 @@ export async function POST(req: NextRequest) {
     const telegramId = String(user.id);
     const usernameNorm = normalizeTelegramUsername(user.username || null);
 
-    const channelAdmin = await isTelegramAdmin(telegramId);
+    // Parallel Telegram API calls (Desktop Mini App felt stuck on sequential RTT)
+    const [channelAdmin, memberStatus] = await Promise.all([
+      isTelegramAdmin(telegramId),
+      getChannelMemberStatus(telegramId),
+    ]);
+    const inChannel = isChannelMemberStatus(memberStatus);
 
     // Do NOT force traffer for every opener — default subscriber
     const botUser = await upsertBotUser(
@@ -44,9 +49,6 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-
-    const memberStatus = await getChannelMemberStatus(telegramId);
-    const inChannel = isChannelMemberStatus(memberStatus);
 
     if (channelAdmin) {
       const adminUser = await prisma.user.findFirst({
