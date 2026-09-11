@@ -5,7 +5,7 @@ import Script from "next/script";
 import { AdminTab } from "./AdminTab";
 import { DEMO_ADMIN, DEMO_CABINET } from "./demo";
 import { HomeTab } from "./HomeTab";
-import { PeopleTab } from "./PeopleTab";
+import { PeopleTab, type AdminPerson, type AdminProductOpt } from "./PeopleTab";
 import { ProductsTab } from "./ProductsTab";
 import { PreviewBanner, TgHeader } from "./TgHeader";
 import { TgTabBar } from "./TgTabBar";
@@ -95,6 +95,10 @@ export default function TelegramMiniAppPage() {
   const [adminData, setAdminData] = useState<Record<string, unknown> | null>(
     null
   );
+  const [peopleData, setPeopleData] = useState<{
+    users?: AdminPerson[];
+    products?: AdminProductOpt[];
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [wdAmount, setWdAmount] = useState("");
   const [wdDetails, setWdDetails] = useState("");
@@ -175,6 +179,17 @@ export default function TelegramMiniAppPage() {
     }
   }, []);
 
+  const loadPeople = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tg/bot-admin?tab=users", {
+        credentials: "include",
+      });
+      if (res.ok) setPeopleData(await res.json());
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     if (auth.status !== "ready") return;
     void loadCabinet();
@@ -190,6 +205,11 @@ export default function TelegramMiniAppPage() {
       setTab("admin");
     }
   }, [auth, cabinetForbidden]);
+
+  useEffect(() => {
+    if (auth.status !== "ready" || auth.role !== "ADMIN") return;
+    if (tab === "people") void loadPeople();
+  }, [auth, tab, loadPeople]);
 
   async function requestWithdraw(e: React.FormEvent) {
     e.preventDefault();
@@ -263,7 +283,7 @@ export default function TelegramMiniAppPage() {
       return;
     }
     setMsg("Сохранено");
-    await Promise.all([loadCabinet(), loadAdmin(adminSub)]);
+    await Promise.all([loadCabinet(), loadAdmin(adminSub), loadPeople()]);
   }
 
   const showAdmin =
@@ -431,10 +451,34 @@ export default function TelegramMiniAppPage() {
                   />
                 ) : null}
 
-                {tab === "people" && displayCabinet ? (
+                {tab === "people" && (displayCabinet || showAdmin) ? (
                   <PeopleTab
-                    referrals={displayCabinet.referrals}
+                    referrals={displayCabinet?.referrals || []}
                     allChannel={showAdmin}
+                    people={
+                      (peopleData?.users as AdminPerson[] | undefined) || []
+                    }
+                    products={
+                      (peopleData?.products as AdminProductOpt[] | undefined) ||
+                      []
+                    }
+                    onIssue={(userId, productId) =>
+                      void adminAction(
+                        productId === "all"
+                          ? {
+                              action: "issue_products",
+                              userId,
+                              productIds: "all",
+                            }
+                          : {
+                              action: "issue_products",
+                              userId,
+                              productId,
+                            }
+                      )
+                    }
+                    disabled={isDemo}
+                    loading={loading && !peopleData}
                   />
                 ) : null}
 

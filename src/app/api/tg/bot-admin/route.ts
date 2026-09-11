@@ -49,10 +49,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ withdrawals });
   }
   if (tab === "users") {
-    const [users, products] = await Promise.all([
+    const [users, products, subscribers] = await Promise.all([
       prisma.botUser.findMany({
         orderBy: { createdAt: "desc" },
-        take: 200,
+        take: 500,
         include: {
           referrer: { select: { id: true, username: true, firstName: true, role: true } },
           leadsAsClient: {
@@ -66,32 +66,47 @@ export async function GET(req: NextRequest) {
         orderBy: { createdAt: "asc" },
         select: { id: true, title: true, reward: true },
       }),
+      prisma.subscriber.findMany({
+        select: {
+          telegramId: true,
+          username: true,
+          joinedAt: true,
+          inviteLinkName: true,
+        },
+      }),
     ]);
+    const subByTg = new Map(subscribers.map((s) => [s.telegramId, s]));
     return NextResponse.json({
       products,
-      users: users.map((u) => ({
-        id: u.id,
-        username: u.username,
-        firstName: u.firstName,
-        telegramId: u.telegramId,
-        role: u.role,
-        balance: u.balance,
-        isBanned: u.isBanned,
-        createdAt: u.createdAt,
-        inviteLinkName: u.inviteLinkName,
-        refSource:
-          u.referrer?.username ||
-          u.referrer?.firstName ||
-          (u.inviteLinkName === "ADMIN" || !u.referrerId ? "Админы" : null) ||
-          "Админы",
-        issues: u.leadsAsClient.map((l) => ({
-          id: l.id,
-          status: l.status,
-          productId: l.product.id,
-          product: l.product.title,
-          premium: l.product.reward,
-        })),
-      })),
+      users: users.map((u) => {
+        const sub = subByTg.get(u.telegramId);
+        return {
+          id: u.id,
+          username: u.username || sub?.username || null,
+          firstName: u.firstName,
+          telegramId: u.telegramId,
+          role: u.role,
+          balance: u.balance,
+          isBanned: u.isBanned,
+          createdAt: sub?.joinedAt || u.createdAt,
+          inviteLinkName: u.inviteLinkName || sub?.inviteLinkName || null,
+          refSource:
+            u.referrer?.username ||
+            u.referrer?.firstName ||
+            (u.inviteLinkName === "ADMIN" ||
+            sub?.inviteLinkName === "ADMIN" ||
+            !u.referrerId
+              ? "Админы"
+              : "траффер"),
+          issues: u.leadsAsClient.map((l) => ({
+            id: l.id,
+            status: l.status,
+            productId: l.product.id,
+            product: l.product.title,
+            premium: l.product.reward,
+          })),
+        };
+      }),
     });
   }
 
