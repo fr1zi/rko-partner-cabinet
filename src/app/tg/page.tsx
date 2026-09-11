@@ -98,6 +98,7 @@ export default function TelegramMiniAppPage() {
   const [loading, setLoading] = useState(false);
   const [wdAmount, setWdAmount] = useState("");
   const [wdDetails, setWdDetails] = useState("");
+  const [applyingId, setApplyingId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   const isDemo = auth.status === "no_telegram";
 
@@ -218,6 +219,32 @@ export default function TelegramMiniAppPage() {
     await loadCabinet();
   }
 
+  async function applyProduct(productId: string) {
+    if (isDemo) {
+      setMsg("Демо: заявки только из бота");
+      return;
+    }
+    setMsg("");
+    setApplyingId(productId);
+    try {
+      const res = await fetch("/api/tg/cabinet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "apply", productId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg(data.error || "Ошибка");
+        return;
+      }
+      setMsg("Заявка отправлена, статус «в обработке»");
+      await loadCabinet();
+    } finally {
+      setApplyingId(null);
+    }
+  }
+
   async function adminAction(body: Record<string, unknown>) {
     if (isDemo) {
       setMsg("Демо: действия доступны только из бота");
@@ -254,7 +281,7 @@ export default function TelegramMiniAppPage() {
     } else if (isPartner) {
       list.push("home", "products", "people", "withdraw");
     } else if (isSubscriber) {
-      list.push("home", "products");
+      list.push("home", "products", "withdraw");
     }
     return list;
   }, [showAdmin, isPartner, isSubscriber]);
@@ -384,6 +411,11 @@ export default function TelegramMiniAppPage() {
                         ? "Превью: так видит подписчик (цены, без премий)"
                         : undefined
                     }
+                    onApply={
+                      isSubscriber && !showAdmin ? applyProduct : undefined
+                    }
+                    applyingId={applyingId}
+                    disabled={isDemo}
                   />
                 ) : null}
 

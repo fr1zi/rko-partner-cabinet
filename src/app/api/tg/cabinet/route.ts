@@ -3,7 +3,8 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { refLinkFor, formatMoney, isHotProduct, ensureBotProducts } from "@/lib/bot/users";
 import { getChannelJoinUrl } from "@/lib/bot/adminInvite";
-import { sendToAdmins } from "@/lib/telegram";
+import { sendMessage, sendToAdmins } from "@/lib/telegram";
+import { supportDmUrl, normalizeLeadStatus } from "@/lib/bot/leads";
 
 async function requireBotUser() {
   const session = await getSession();
@@ -59,6 +60,13 @@ export async function GET() {
     take: 20,
   });
 
+  const myLeads = await prisma.botLead.findMany({
+    where: { clientId: user.id },
+    include: { product: true },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
   const refStatuses = await Promise.all(
     refs.map(async (r) => {
       const ls = await prisma.botLead.findMany({
@@ -67,8 +75,10 @@ export async function GET() {
         orderBy: { createdAt: "desc" },
       });
       let status: "approved" | "pending" | "none" = "none";
-      if (ls.some((x) => x.status === "approved")) status = "approved";
-      else if (ls.some((x) => x.status === "new" || x.status === "duplicate"))
+      const st = ls.map((x) => normalizeLeadStatus(x.status));
+      if (st.some((s) => s === "awaiting_payout" || s === "paid" || s === "approved"))
+        status = "approved";
+      else if (st.some((s) => s === "processing" || s === "new" || s === "duplicate"))
         status = "pending";
       return {
         id: r.id,
@@ -122,6 +132,15 @@ export async function GET() {
       }))
       .sort((a, b) => Number(b.hot) - Number(a.hot)),
     channelUrl: await getChannelJoinUrl(),
+    supportUrl: supportDmUrl(),
+    applications: myLeads.map((l) => ({
+      id: l.id,
+      status: normalizeLeadStatus(l.status),
+      product: l.product.title,
+      subscriberAmount: l.subscriberAmount ?? l.product.subscriberPrice,
+      premium: l.premiumAmount ?? l.product.reward,
+      createdAt: l.createdAt,
+    })),
     referrals: refStatuses,
     leads: leads.map((l) => ({
       id: l.id,
@@ -146,9 +165,14 @@ export async function POST(req: NextRequest) {
   const action = body.action as string;
 
   if (action === "withdraw") {
-    if (user.role !== "traffer" && user.role !== "admin") {
+    if (
+      user.role !== "traffer" &&
+      user.role !== "admin" &&
+      user.role !== "subscriber" &&
+      user.role !== "client"
+    ) {
       return NextResponse.json(
-        { error: "Вывод доступен только трафферам" },
+        { error: "Вывод недоступен" },
         { status: 403 }
       );
     }
@@ -185,6 +209,55 @@ export async function POST(req: NextRequest) {
       `💸 Запрос вывода ${formatMoney(amount)}\nОт: ${fresh.username || fresh.telegramId}\n${details}`
     );
     return NextResponse.json({ ok: true });
+  }
+
+
+  if (action === "apply") {
+    const productId = String(body.productId || "");
+    const product = await prisma.botProduct.findUnique({ where: { id: productId } });
+    if (!product || !product.isActive) {
+      return NextResponse.json({ error: "продукт недоступен" }, { status: 400 });
+    }
+    const existing = await prisma.botLead.findFirst({
+      where: {
+        clientId: user.id,
+        productId,
+        status: { not: "rejected" },
+      },
+    });
+    if (existing) {
+      return NextResponse.json(
+        { error: "заявка по этому продукту уже есть" },
+        { status: 400 }
+      );
+    }
+    const lead = await prisma.botLead.create({
+      data: {
+        clientId: user.id,
+        referrerId: user.referrerId,
+        productId,
+        fullName: user.firstName || user.username || "",
+        phone: String(body.phone || ""),
+        status: "processing",
+      },
+    });
+    await sendToAdmins(
+      `📥 Новая заявка (в обработке)\nКлиент: ${user.username || user.firstName || user.telegramId}\nПродукт: ${product.title}\nID: ${lead.id}`
+    );
+    if (user.referrerId) {
+      const ref = await prisma.botUser.findUnique({ where: { id: user.referrerId } });
+      if (ref) {
+        try {
+          await sendMessage(
+            ref.telegramId,
+            `🔔 Новая заявка от реферала ${user.username || user.telegramId}: ${product.title}`
+          );
+        } catch {
+          /* blocked */
+        }
+      }
+    }
+    return NextResponse.json({ ok: true, id: lead.id });
   }
 
   return NextResponse.json({ error: "unknown action" }, { status: 400 });

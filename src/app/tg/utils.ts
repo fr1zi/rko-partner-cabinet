@@ -18,13 +18,15 @@ export function formatDate(iso: string) {
 
 export function statusLabel(status: string) {
   const map: Record<string, string> = {
-    approved: "Одобрено",
+    approved: "Ждём выплату",
     pending: "Ожидает",
     none: "Нет заявок",
-    new: "Новая",
+    new: "В обработке",
+    processing: "В обработке",
+    awaiting_payout: "Ждём выплату",
     rejected: "Отклонено",
     paid: "Выплачено",
-    duplicate: "Дубль",
+    duplicate: "В обработке",
   };
   return map[status] || status;
 }
@@ -38,7 +40,8 @@ export function roleLabel(role: string | null | undefined) {
 
 export function txTypeLabel(type: string) {
   const map: Record<string, string> = {
-    credit_lead: "Начисление",
+    credit_lead: "Премия траффера",
+    credit_sub: "Начисление подписчику",
     debit_withdraw: "Вывод",
     adjust: "Корректировка",
   };

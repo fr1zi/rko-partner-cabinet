@@ -29,6 +29,7 @@ import {
   resolveUserShort,
   refLinkFor,
 } from "@/lib/bot/users";
+import { setLeadStatus } from "@/lib/bot/leads";
 import { isChannelAdmin } from "@/lib/bot/channelAdmins";
 
 export async function showAdminHome(
@@ -113,51 +114,15 @@ export async function approveLead(short: string, chatId: number | string) {
     await sendMessage(chatId, "Заявка не найдена.");
     return;
   }
-  const full = await prisma.botLead.findUnique({
-    where: { id: lead.id },
-    include: { product: true, referrer: true },
+  const result = await setLeadStatus({
+    leadId: lead.id,
+    status: "awaiting_payout",
   });
-  if (!full || full.status !== "new") {
-    await sendMessage(chatId, "Заявка уже обработана.");
+  if ("error" in result) {
+    await sendMessage(chatId, "Заявку не удалось обработать.");
     return;
   }
-  const existingCredit = await prisma.ledgerTx.findFirst({
-    where: { leadId: full.id, type: "credit_lead" },
-  });
-  await prisma.botLead.update({
-    where: { id: full.id },
-    data: { status: "approved", approvedAt: new Date() },
-  });
-  if (!existingCredit && full.referrerId && full.product.rewardType === "fixed") {
-    const amount = full.product.reward;
-    await prisma.$transaction([
-      prisma.botUser.update({
-        where: { id: full.referrerId },
-        data: { balance: { increment: amount } },
-      }),
-      prisma.ledgerTx.create({
-        data: {
-          userId: full.referrerId,
-          amount,
-          type: "credit_lead",
-          leadId: full.id,
-          comment: `Одобрение ${full.product.title}`,
-        },
-      }),
-    ]);
-    if (full.referrer) {
-      await sendMessage(
-        full.referrer.telegramId,
-        `✅ Заявка одобрена: ${full.product.title}. Начислено ${formatMoney(amount)}.`
-      );
-    }
-  } else if (full.referrer) {
-    await sendMessage(
-      full.referrer.telegramId,
-      `✅ Заявка одобрена: ${full.product.title}.`
-    );
-  }
-  await sendMessage(chatId, `Одобрено: ${full.id}`);
+  await sendMessage(chatId, "Статус: ждём выплату. Сумма подписчику — из цены продукта.");
 }
 
 export async function rejectLeadStart(
@@ -179,7 +144,7 @@ export async function rejectLeadFinish(leadId: string, comment: string) {
     where: { id: leadId },
     include: { product: true, referrer: true },
   });
-  if (!full || full.status !== "new") return "already";
+  if (!full || (full.status !== "new" && full.status !== "processing")) return "already";
   await prisma.botLead.update({
     where: { id: leadId },
     data: { status: "rejected", adminComment: comment },

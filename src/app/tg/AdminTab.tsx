@@ -1,7 +1,7 @@
 "use client";
 
 import type { AdminSubTab } from "./types";
-import { formatDate, money } from "./utils";
+import { formatDate, money, statusLabel } from "./utils";
 
 const SUBS: Array<[AdminSubTab, string]> = [
   ["stats", "Итоги"],
@@ -254,55 +254,129 @@ function AdminBody({
       status: string;
       fullName: string;
       phone: string;
-      product: { title: string };
-      client: { username: string | null; telegramId: string };
+      subscriberAmount?: number | null;
+      premiumAmount?: number | null;
+      product: { title: string; subscriberPrice?: number; reward?: number };
+      client: { username: string | null; telegramId: string; firstName?: string | null };
+      referrer?: { username: string | null; firstName?: string | null } | null;
     }>;
     if (leads.length === 0) return <div className="tg-empty">Нет заявок</div>;
     return (
       <div className="tg-stack">
-        {leads.map((l) => (
-          <div key={l.id} className="tg-card space-y-3">
-            <div>
-              <p className="tg-card-title">
-                {l.fullName || l.client.username || l.client.telegramId}
-              </p>
-              <p className="tg-muted text-sm mt-1">
-                {l.product.title} · {l.phone}
-              </p>
-              <p className="tg-muted text-xs mt-1">{l.status}</p>
-            </div>
-            {l.status === "new" ? (
-              <div className="flex gap-2">
+        <p className="tg-note-plate">
+          Статусы: в обработке → ждём выплату → выплачено. При успехе пишете
+          сумму подписчику, премия траффера берётся из продукта.
+        </p>
+        {leads.map((l) => {
+          const st = l.status === "new" || l.status === "duplicate"
+            ? "processing"
+            : l.status === "approved"
+              ? "awaiting_payout"
+              : l.status;
+          const defAmt = l.subscriberAmount ?? l.product.subscriberPrice ?? 0;
+          const prem = l.premiumAmount ?? l.product.reward ?? 0;
+          const refName =
+            l.referrer?.username || l.referrer?.firstName || "Админы";
+          return (
+            <div key={l.id} className="tg-card space-y-3">
+              <div>
+                <p className="tg-card-title">
+                  {l.fullName || l.client.username || l.client.telegramId}
+                </p>
+                <p className="tg-muted text-sm mt-1">
+                  {l.product.title}
+                  {l.phone ? ` · ${l.phone}` : ""}
+                </p>
+                <p className="tg-muted text-xs mt-1">рефка: {refName}</p>
+                <span className={`tg-status tg-status-${st} mt-2 inline-block`}>
+                  {statusLabel(st)}
+                </span>
+              </div>
+              <div className="tg-edit-block">
+                <label className="tg-label">Сумма подписчику, ₽</label>
+                <input
+                  className="tg-input"
+                  type="number"
+                  defaultValue={defAmt}
+                  disabled={disabled}
+                  id={`amt-${l.id}`}
+                />
+                <p className="tg-muted text-xs">
+                  Премия траффера: {money(prem)}
+                </p>
+              </div>
+              <div className="flex gap-2 flex-wrap">
                 <button
                   type="button"
-                  className="tg-btn-primary text-xs flex-1"
-                  disabled={disabled}
+                  className="tg-btn-secondary text-xs"
+                  disabled={disabled || st === "processing"}
                   onClick={() =>
-                    void onAction({ action: "lead_approve", id: l.id })
+                    void onAction({
+                      action: "lead_set_status",
+                      id: l.id,
+                      status: "processing",
+                    })
                   }
                 >
-                  Одобрить
+                  В обработке
                 </button>
                 <button
                   type="button"
-                  className="tg-btn-secondary text-xs flex-1"
-                  disabled={disabled}
+                  className="tg-btn-primary text-xs"
+                  disabled={disabled || st === "awaiting_payout"}
+                  onClick={() => {
+                    const el = document.getElementById(
+                      `amt-${l.id}`
+                    ) as HTMLInputElement | null;
+                    void onAction({
+                      action: "lead_set_status",
+                      id: l.id,
+                      status: "awaiting_payout",
+                      subscriberAmount: Number(el?.value || defAmt),
+                    });
+                  }}
+                >
+                  Ждём выплату
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-primary text-xs"
+                  disabled={disabled || st === "paid"}
+                  onClick={() => {
+                    const el = document.getElementById(
+                      `amt-${l.id}`
+                    ) as HTMLInputElement | null;
+                    void onAction({
+                      action: "lead_set_status",
+                      id: l.id,
+                      status: "paid",
+                      subscriberAmount: Number(el?.value || defAmt),
+                    });
+                  }}
+                >
+                  Выплачено
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs"
+                  disabled={disabled || st === "rejected"}
                   onClick={() => {
                     const comment =
-                      prompt("Комментарий отклонения") || "отклонено";
+                      prompt("Почему не прошло") || "не прошло";
                     void onAction({
-                      action: "lead_reject",
+                      action: "lead_set_status",
                       id: l.id,
+                      status: "rejected",
                       comment,
                     });
                   }}
                 >
-                  Отклонить
+                  Не прошло
                 </button>
               </div>
-            ) : null}
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
     );
   }

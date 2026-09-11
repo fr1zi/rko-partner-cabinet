@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { CabinetData, TgRole } from "./types";
-import { money } from "./utils";
+import { formatDate, money, statusLabel } from "./utils";
 
 export type AdminHomeStats = {
   trafters?: number;
@@ -97,8 +97,9 @@ export function HomeTab({
         <section className="tg-card">
           <h2 className="tg-card-title">Добро пожаловать</h2>
           <p className="tg-muted text-sm mt-2 leading-relaxed">
-            Кабинет подписчика: смотрите продукты и цены. Реф-ссылка и вывод
-            доступны только трафферам — их назначает админ канала.
+            Сначала напишите нам в ЛС, потом оставьте заявку на продукт.
+            Админ ставит статус и сумму. Когда ждём выплату — можно вывод
+            или снова ЛС.
           </p>
         </section>
         {!channelMember ? (
@@ -120,27 +121,54 @@ export function HomeTab({
             Канал @w1nstr1k3
           </a>
         )}
+        <section className="tg-card">
+          <p className="tg-muted text-xs mb-1">К выплате</p>
+          <p className="text-2xl font-semibold text-money tracking-tight">
+            {money(data.botUser.balance)}
+          </p>
+        </section>
         <section>
-          <h2 className="tg-section-label">Продукты</h2>
-          <div className="tg-stack">
-            {data.products.slice(0, 3).map((p) => (
-              <article key={p.id} className="tg-card tg-product">
-                <div className="tg-product-title-row">
-                  <p className="tg-card-title">{p.title}</p>
-                  {p.hot ? <span className="tg-hot-badge">HOT</span> : null}
-                </div>
-                {p.description ? (
-                  <p className="tg-product-desc">{p.description}</p>
-                ) : null}
-                <div className="tg-money-plate">
-                  <span className="tg-money-plate-label">Цена</span>
-                  <span className="tg-money-plate-value">
-                    {money(p.subscriberPrice)}
-                  </span>
-                </div>
-              </article>
-            ))}
-          </div>
+          <h2 className="tg-section-label">Мои заявки</h2>
+          {(data.applications || []).length === 0 ? (
+            <p className="tg-muted text-sm">Пока нет заявок — оставьте из «Продукты».</p>
+          ) : (
+            <div className="tg-stack">
+              {(data.applications || []).map((a) => {
+                const canClaim =
+                  a.status === "awaiting_payout" || a.status === "paid";
+                return (
+                  <article key={a.id} className="tg-card space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="tg-card-title">{a.product}</p>
+                      <span className={`tg-status tg-status-${a.status}`}>
+                        {statusLabel(a.status)}
+                      </span>
+                    </div>
+                    {a.subscriberAmount ? (
+                      <p className="tg-muted text-sm">
+                        Вам: {money(a.subscriberAmount)}
+                      </p>
+                    ) : null}
+                    {a.createdAt ? (
+                      <p className="tg-muted text-xs">{formatDate(a.createdAt)}</p>
+                    ) : null}
+                    {canClaim ? (
+                      <div className="flex gap-2">
+                        <a
+                          className="tg-btn-secondary text-xs flex-1 text-center"
+                          href={data.supportUrl || "https://t.me/f3n1byt666"}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Написать в ЛС
+                        </a>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </section>
       </div>
     );

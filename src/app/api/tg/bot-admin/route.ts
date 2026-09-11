@@ -9,6 +9,7 @@ import {
   isChannelInviteConfigured,
 } from "@/lib/telegram";
 import { refLinkFor } from "@/lib/bot/users";
+import { setLeadStatus } from "@/lib/bot/leads";
 
 async function requireChannelAdmin() {
   const session = await getSession();
@@ -195,77 +196,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, product: updated });
   }
 
-  if (action === "lead_approve") {
+  if (
+    action === "lead_approve" ||
+    action === "lead_reject" ||
+    action === "lead_set_status"
+  ) {
     const id = String(body.id || "");
-    const full = await prisma.botLead.findUnique({
-      where: { id },
-      include: { product: true, referrer: true },
+    let status = String(body.status || "");
+    if (action === "lead_approve") status = "awaiting_payout";
+    if (action === "lead_reject") status = "rejected";
+    const amountRaw = body.subscriberAmount;
+    const subscriberAmount =
+      amountRaw === undefined || amountRaw === ""
+        ? undefined
+        : Number(amountRaw);
+    const result = await setLeadStatus({
+      leadId: id,
+      status,
+      subscriberAmount,
+      comment: body.comment ? String(body.comment) : undefined,
     });
-    if (!full || full.status !== "new") {
-      return NextResponse.json({ error: "already processed" }, { status: 400 });
-    }
-    const existingCredit = await prisma.ledgerTx.findFirst({
-      where: { leadId: full.id, type: "credit_lead" },
-    });
-    await prisma.botLead.update({
-      where: { id },
-      data: { status: "approved", approvedAt: new Date() },
-    });
-    if (
-      !existingCredit &&
-      full.referrerId &&
-      full.product.rewardType === "fixed"
-    ) {
-      const amount = full.product.reward;
-      await prisma.$transaction([
-        prisma.botUser.update({
-          where: { id: full.referrerId },
-          data: { balance: { increment: amount } },
-        }),
-        prisma.ledgerTx.create({
-          data: {
-            userId: full.referrerId,
-            amount,
-            type: "credit_lead",
-            leadId: full.id,
-            comment: `Одобрение ${full.product.title}`,
-          },
-        }),
-      ]);
-      if (full.referrer) {
-        await sendMessage(
-          full.referrer.telegramId,
-          `✅ Заявка одобрена: ${full.product.title}. Начислено ${formatMoney(amount)}.`
-        );
-      }
-    } else if (full.referrer) {
-      await sendMessage(
-        full.referrer.telegramId,
-        `✅ Заявка одобрена: ${full.product.title}.`
-      );
-    }
-    return NextResponse.json({ ok: true });
-  }
-
-  if (action === "lead_reject") {
-    const id = String(body.id || "");
-    const comment = String(body.comment || "");
-    const full = await prisma.botLead.findUnique({
-      where: { id },
-      include: { product: true, referrer: true },
-    });
-    if (!full || full.status !== "new") {
-      return NextResponse.json({ error: "already processed" }, { status: 400 });
-    }
-    await prisma.botLead.update({
-      where: { id },
-      data: { status: "rejected", adminComment: comment },
-    });
-    if (full.referrer) {
-      await sendMessage(
-        full.referrer.telegramId,
-        `❌ Заявка отклонена: ${full.product.title}. ${comment}`
-      );
+    if ("error" in result) {
+      const code = result.error === "not found" ? 404 : 400;
+      return NextResponse.json({ error: result.error }, { status: code });
     }
     return NextResponse.json({ ok: true });
   }
@@ -438,7 +391,7 @@ export async function POST(req: NextRequest) {
         where: {
           clientId: client.id,
           productId: product.id,
-          status: { in: ["new", "approved"] },
+          status: { not: "rejected" },
         },
       });
       if (dup) continue;
@@ -448,40 +401,11 @@ export async function POST(req: NextRequest) {
           referrerId: client.referrerId,
           productId: product.id,
           fullName: client.firstName || client.username || "",
-          status: "approved",
-          approvedAt: new Date(),
+          status: "processing",
           adminComment: "оформлено вручную",
         },
       });
       created.push(lead.id);
-      if (client.referrerId && product.reward) {
-        const existingCredit = await prisma.ledgerTx.findFirst({
-          where: { leadId: lead.id, type: "credit_lead" },
-        });
-        if (!existingCredit) {
-          await prisma.$transaction([
-            prisma.botUser.update({
-              where: { id: client.referrerId },
-              data: { balance: { increment: product.reward } },
-            }),
-            prisma.ledgerTx.create({
-              data: {
-                userId: client.referrerId,
-                amount: product.reward,
-                type: "credit_lead",
-                leadId: lead.id,
-                comment: `Оформление ${product.title}`,
-              },
-            }),
-          ]);
-          if (client.referrer) {
-            await sendMessage(
-              client.referrer.telegramId,
-              `✅ Оформлен ${client.username || client.firstName || "клиент"}: ${product.title}. Начислено ${formatMoney(product.reward)}.`
-            );
-          }
-        }
-      }
     }
     return NextResponse.json({ ok: true, created: created.length });
   }

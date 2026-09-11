@@ -209,9 +209,15 @@ export async function showReferrals(
       select: { status: true },
     });
     let st = "нет заявок";
-    if (leads.some((l) => l.status === "approved")) st = "есть одобренная";
-    else if (leads.some((l) => l.status === "new" || l.status === "duplicate"))
-      st = "ожидает";
+    if (leads.some((l) => l.status === "paid")) st = "выплачено";
+    else if (leads.some((l) => l.status === "awaiting_payout" || l.status === "approved"))
+      st = "ждём выплату";
+    else if (
+      leads.some((l) =>
+        ["processing", "new", "duplicate"].includes(l.status)
+      )
+    )
+      st = "в обработке";
     lines.push(
       `• ${r.username || r.firstName || r.telegramId} — ${st}`
     );

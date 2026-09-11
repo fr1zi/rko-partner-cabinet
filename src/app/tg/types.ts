@@ -22,6 +22,15 @@ export type CabinetData = {
   };
   refLink: string;
   channelUrl?: string;
+  supportUrl?: string;
+  applications?: Array<{
+    id: string;
+    status: string;
+    product: string;
+    subscriberAmount: number | null;
+    premium: number;
+    createdAt: string;
+  }>;
   stats: {
     clicks: number;
     registrations: number;

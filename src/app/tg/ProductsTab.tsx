@@ -11,6 +11,8 @@ export function ProductsTab({
   channelMember,
   editable = false,
   onSave,
+  onApply,
+  applyingId,
   disabled,
   previewNote,
 }: {
@@ -20,6 +22,8 @@ export function ProductsTab({
   channelMember?: boolean;
   editable?: boolean;
   onSave?: (id: string, value: number) => Promise<void> | void;
+  onApply?: (id: string) => Promise<void> | void;
+  applyingId?: string | null;
   disabled?: boolean;
   previewNote?: string;
 }) {
@@ -123,10 +127,22 @@ export function ProductsTab({
                 </button>
               </div>
             ) : (
-              <div className="tg-money-plate">
-                <span className="tg-money-plate-label">{amountLabel}</span>
-                <span className="tg-money-plate-value">{money(amount)}</span>
-              </div>
+              <>
+                <div className="tg-money-plate">
+                  <span className="tg-money-plate-label">{amountLabel}</span>
+                  <span className="tg-money-plate-value">{money(amount)}</span>
+                </div>
+                {isShop && onApply ? (
+                  <button
+                    type="button"
+                    className="tg-btn-primary w-full text-sm"
+                    disabled={disabled || applyingId === p.id}
+                    onClick={() => void onApply(p.id)}
+                  >
+                    {applyingId === p.id ? "Отправляю…" : "Оставить заявку"}
+                  </button>
+                ) : null}
+              </>
             )}
           </article>
         );

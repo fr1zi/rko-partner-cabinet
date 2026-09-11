@@ -140,20 +140,22 @@ model BotProduct {
 }
 
 model BotLead {
-  id            String   @id @default(cuid())
-  clientId      String
-  client        BotUser  @relation("LeadClient", fields: [clientId], references: [id])
-  referrerId    String?
-  referrer      BotUser? @relation("LeadRef", fields: [referrerId], references: [id])
-  productId     String
-  product       BotProduct @relation(fields: [productId], references: [id])
-  fullName      String   @default("")
-  phone         String   @default("")
-  status        String   @default("new")
-  adminComment  String?
-  createdAt     DateTime @default(now())
-  approvedAt    DateTime?
-  txs           LedgerTx[]
+  id                String   @id @default(cuid())
+  clientId          String
+  client            BotUser  @relation("LeadClient", fields: [clientId], references: [id])
+  referrerId        String?
+  referrer          BotUser? @relation("LeadRef", fields: [referrerId], references: [id])
+  productId         String
+  product           BotProduct @relation(fields: [productId], references: [id])
+  fullName          String   @default("")
+  phone             String   @default("")
+  status            String   @default("processing") // processing | awaiting_payout | paid | rejected
+  subscriberAmount  Float?
+  premiumAmount     Float?
+  adminComment      String?
+  createdAt         DateTime @default(now())
+  approvedAt        DateTime?
+  txs               LedgerTx[]
 
   @@index([clientId, productId])
 }

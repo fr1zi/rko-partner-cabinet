@@ -207,9 +207,13 @@ async function createLead(
       status: { not: "rejected" },
     },
   });
-
-  let status = "new";
-  if (existing) status = "duplicate";
+  if (existing) {
+    await sendMessage(
+      chatId,
+      "Заявка по этому продукту уже есть. Статус смотрите в кабинете."
+    );
+    return;
+  }
 
   const lead = await prisma.botLead.create({
     data: {
@@ -218,25 +222,18 @@ async function createLead(
       productId,
       fullName,
       phone,
-      status,
+      status: "processing",
     },
   });
 
-  if (status === "duplicate") {
-    await sendMessage(
-      chatId,
-      "Заявка уже была по этому продукту — отмечена как дубль. Повторная оплата не начисляется."
-    );
-  } else {
-    await sendMessage(
-      chatId,
-      "✅ Заявка принята. Менеджер свяжется с вами. Спасибо!"
-    );
-  }
+  await sendMessage(
+    chatId,
+    "✅ Заявка принята, статус «в обработке». Смотрите кабинет."
+  );
 
   const uname = client.username || client.telegramId;
   await sendToAdmins(
-    `📥 Новая заявка (${status})\n` +
+    `📥 Новая заявка (в обработке)\n` +
       `Клиент: ${fullName} (${uname})\n` +
       `Тел: ${phone}\n` +
       `Продукт: ${product.title}\n` +
@@ -250,7 +247,7 @@ async function createLead(
     if (ref) {
       await sendMessage(
         ref.telegramId,
-        `🔔 Новая заявка от реферала ${uname}: ${product.title} (${status})`
+        `🔔 Новая заявка от реферала ${uname}: ${product.title}`
       );
     }
   }

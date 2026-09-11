@@ -29,8 +29,23 @@ export function WithdrawTab({
         </p>
       </section>
 
+      {data.supportUrl ? (
+        <a
+          className="tg-btn-secondary w-full text-center"
+          href={data.supportUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Написать в ЛС за выплатой
+        </a>
+      ) : null}
+
       <form onSubmit={onWithdraw} className="tg-card space-y-3">
         <h2 className="tg-card-title">Запросить вывод</h2>
+        <p className="tg-muted text-xs">
+          Когда заявка в статусе «ждём выплату» или «выплачено» — можно
+          вывести начисленные деньги или написать в ЛС.
+        </p>
         <label className="block">
           <span className="tg-label">Сумма, ₽</span>
           <input
