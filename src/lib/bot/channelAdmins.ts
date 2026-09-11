@@ -89,3 +89,43 @@ export async function getChannelSubscriberCount(
   memberCountCache = { count: data.result, fetchedAt: Date.now() };
   return data.result;
 }
+
+export type ChannelAudienceStats = {
+  total: number;
+  /** Humans who are not channel admins/creator (approx. regular subscribers). */
+  subscribers: number;
+  adminsHuman: number;
+  bots: number;
+};
+
+export async function getChannelAudienceStats(
+  force = false
+): Promise<ChannelAudienceStats | null> {
+  const chatId = getTelegramChannelId();
+  if (!chatId) return null;
+
+  const [countData, adminData] = await Promise.all([
+    tgApi<number>("getChatMemberCount", { chat_id: chatId }),
+    tgApi<ChatMember[]>("getChatAdministrators", { chat_id: chatId }),
+  ]);
+  if (!countData.ok || typeof countData.result !== "number") return null;
+  const total = countData.result;
+  let adminsHuman = 0;
+  let bots = 0;
+  if (adminData.ok && Array.isArray(adminData.result)) {
+    for (const m of adminData.result) {
+      if (!m?.user) continue;
+      if (m.user.is_bot) bots += 1;
+      else if (m.status === "administrator" || m.status === "creator") {
+        adminsHuman += 1;
+      }
+    }
+  }
+  const subscribers = Math.max(0, total - adminsHuman - bots);
+  if (force || !memberCountCache) {
+    memberCountCache = { count: total, fetchedAt: Date.now() };
+  } else {
+    memberCountCache = { count: total, fetchedAt: Date.now() };
+  }
+  return { total, subscribers, adminsHuman, bots };
+}

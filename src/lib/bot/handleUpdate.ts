@@ -50,7 +50,7 @@ import {
 } from "@/lib/bot/admin";
 import { isChannelAdmin } from "@/lib/bot/channelAdmins";
 
-type TgUser = TgFrom & { last_name?: string };
+type TgUser = TgFrom & { last_name?: string; is_bot?: boolean };
 type TgInviteLink = { invite_link?: string; name?: string };
 type TgChatMember = { status?: string; user?: TgUser };
 type TgChatMemberUpdated = {
@@ -136,14 +136,16 @@ async function handleChatMember(update: TgChatMemberUpdated) {
   const invite = update.invite_link;
   const inviteLink = invite?.invite_link || null;
   const inviteName = invite?.name || null;
-  if (!inviteLink && !inviteName) {
-    return { ignored: true, reason: "no invite_link" };
-  }
-
+  // Still record organic joins (no named invite) — otherwise people "vanish" from stats
   const partner = await findPartnerByInvite(inviteLink, inviteName);
   const telegramId = String(user.id);
   const username = user.username ? `@${user.username}` : null;
+  const firstName = user.first_name || null;
   const joinedAt = update.date ? new Date(update.date * 1000) : new Date();
+
+  if (user.is_bot) {
+    return { ignored: true, reason: "bot join" };
+  }
 
   const subscriber = await prisma.subscriber.upsert({
     where: { telegramId },
@@ -172,7 +174,7 @@ async function handleChatMember(update: TgChatMemberUpdated) {
     create: {
       telegramId,
       username,
-      firstName: user.first_name || null,
+      firstName,
       lastName: user.last_name || null,
       partnerId: partner?.id ?? null,
       refCode: partner?.refCode ?? inviteName ?? null,
@@ -180,7 +182,7 @@ async function handleChatMember(update: TgChatMemberUpdated) {
     },
     update: {
       username,
-      firstName: user.first_name || null,
+      firstName,
       lastName: user.last_name || null,
       ...(partner
         ? { partnerId: partner.id, refCode: partner.refCode, joinedAt }
@@ -188,9 +190,31 @@ async function handleChatMember(update: TgChatMemberUpdated) {
     },
   });
 
+  // Appear in admin «Юзеры» even if they never pressed /start
+  const existing = await prisma.botUser.findUnique({ where: { telegramId } });
+  if (!existing) {
+    await prisma.botUser.create({
+      data: {
+        telegramId,
+        username,
+        firstName,
+        role: "subscriber",
+      },
+    });
+  } else {
+    await prisma.botUser.update({
+      where: { telegramId },
+      data: {
+        username: username ?? undefined,
+        firstName: firstName ?? undefined,
+      },
+    });
+  }
+
   return {
     type: "chat_member",
     attributed: Boolean(partner),
+    organic: !inviteLink && !inviteName,
     subscriberId: subscriber.id,
     partnerId: partner?.id ?? null,
   };

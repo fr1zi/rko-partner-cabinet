@@ -76,7 +76,7 @@ function AdminBody({
     return (
       <div className="tg-stat-grid">
         <StatTile
-          label="Подписчики канала"
+          label="Подписчики"
           value={String(s.channelSubscribers ?? 0)}
           wide
         />

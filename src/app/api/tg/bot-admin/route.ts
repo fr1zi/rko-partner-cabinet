@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isChannelAdmin, getChannelSubscriberCount } from "@/lib/bot/channelAdmins";
+import { isChannelAdmin, getChannelAudienceStats } from "@/lib/bot/channelAdmins";
 import { ensureBotProducts, formatMoney } from "@/lib/bot/users";
 import {
   sendMessage,
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ users });
   }
 
-  const [trafters, clients, leads, sum, channelSubscribers] = await Promise.all([
+  const [trafters, clients, leads, sum, audience] = await Promise.all([
     prisma.botUser.count({
       where: { role: { in: ["traffer", "admin"] } },
     }),
@@ -67,14 +67,15 @@ export async function GET(req: NextRequest) {
       where: { type: "credit_lead" },
       _sum: { amount: true },
     }),
-    getChannelSubscriberCount(),
+    getChannelAudienceStats(true),
   ]);
   return NextResponse.json({
     stats: {
       trafters,
       clients,
       leads,
-      channelSubscribers: channelSubscribers ?? 0,
+      channelSubscribers: audience?.subscribers ?? 0,
+      channelMembersTotal: audience?.total ?? 0,
       credited: sum._sum.amount || 0,
       creditedLabel: formatMoney(sum._sum.amount || 0),
     },

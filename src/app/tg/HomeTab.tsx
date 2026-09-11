@@ -9,6 +9,7 @@ export type AdminHomeStats = {
   clients?: number;
   leads?: number;
   channelSubscribers?: number;
+  channelMembersTotal?: number;
   credited?: number;
   creditedLabel?: string;
 };
@@ -43,7 +44,7 @@ export function HomeTab({
     const s = adminStats || {};
     const tiles = [
       {
-        label: "Подписчики канала",
+        label: "Подписчики",
         value: String(s.channelSubscribers ?? 0),
         wide: true,
       },
