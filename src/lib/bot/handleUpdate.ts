@@ -49,7 +49,8 @@ import {
   handleRoleCommand,
 } from "@/lib/bot/admin";
 import { isChannelAdmin } from "@/lib/bot/channelAdmins";
-import { ADMIN_INVITE_NAME, isAdminInviteName } from "@/lib/bot/adminInvite";
+import { ADMIN_INVITE_NAME, isAdminJoinSource } from "@/lib/bot/adminInvite";
+import { getChannelPublicUrl } from "@/lib/telegram";
 
 type TgUser = TgFrom & { last_name?: string; is_bot?: boolean };
 type TgInviteLink = { invite_link?: string; name?: string };
@@ -148,14 +149,15 @@ async function handleChatMember(update: TgChatMemberUpdated) {
     return { ignored: true, reason: "bot join" };
   }
 
-  // No traffer invite (search / main share / t.me/channel) → count as admin referral
-  const fromAdmin =
-    !partner &&
-    (!inviteName || isAdminInviteName(inviteName));
+  // Anything that is not a traffer named invite = admin (t.me/w1nstr1k3, search, ADMIN +link)
+  const fromAdmin = !partner && isAdminJoinSource(inviteLink, inviteName);
   const storedInviteName = partner
     ? inviteName || partner.telegramInviteLinkName || partner.refCode
     : inviteName || ADMIN_INVITE_NAME;
-  const storedInviteLink = inviteLink || partner?.telegramInviteLink || null;
+  const storedInviteLink =
+    inviteLink ||
+    partner?.telegramInviteLink ||
+    (fromAdmin ? getChannelPublicUrl() : null);
 
   const subscriber = await prisma.subscriber.upsert({
     where: { telegramId },
@@ -186,7 +188,7 @@ async function handleChatMember(update: TgChatMemberUpdated) {
       firstName,
       lastName: user.last_name || null,
       partnerId: partner?.id ?? null,
-      refCode: partner?.refCode ?? inviteName ?? null,
+      refCode: partner?.refCode ?? inviteName ?? (fromAdmin ? ADMIN_INVITE_NAME : null),
       joinedAt,
     },
     update: {

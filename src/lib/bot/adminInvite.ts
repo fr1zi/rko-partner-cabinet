@@ -6,11 +6,11 @@ import {
 
 export const ADMIN_INVITE_NAME = "ADMIN";
 
-let cached: string | null = null;
+let cachedNamed: string | null = null;
 
-/** Named channel invite attributed to admins (organic + public share URL). */
+/** Extra named invite (t.me/+…) — still admin-attributed. Public share stays t.me/w1nstr1k3. */
 export async function ensureAdminInviteLink(): Promise<string> {
-  if (cached) return cached;
+  if (cachedNamed) return cachedNamed;
 
   const settings = await prisma.settings.upsert({
     where: { id: "default" },
@@ -19,8 +19,8 @@ export async function ensureAdminInviteLink(): Promise<string> {
   });
 
   if (settings.adminInviteLink?.startsWith("https://")) {
-    cached = settings.adminInviteLink;
-    return cached!;
+    cachedNamed = settings.adminInviteLink;
+    return cachedNamed;
   }
 
   const inv = await createNamedInviteLink(ADMIN_INVITE_NAME);
@@ -32,23 +32,31 @@ export async function ensureAdminInviteLink(): Promise<string> {
         adminInviteName: inv.name || ADMIN_INVITE_NAME,
       },
     });
-    cached = inv.inviteLink;
-    return cached;
+    cachedNamed = inv.inviteLink;
+    return cachedNamed;
   }
 
   console.error("admin invite create failed", "error" in inv ? inv.error : inv);
   return getChannelPublicUrl();
 }
 
+/** What we put on «Вступить» buttons: public channel, counted as admin ref. */
 export async function getChannelJoinUrl(): Promise<string> {
-  try {
-    return await ensureAdminInviteLink();
-  } catch (e) {
-    console.error("getChannelJoinUrl", e);
-    return getChannelPublicUrl();
-  }
+  return getChannelPublicUrl();
 }
 
 export function isAdminInviteName(name?: string | null): boolean {
   return (name || "").trim().toUpperCase() === ADMIN_INVITE_NAME;
+}
+
+export function isAdminJoinSource(
+  inviteLink?: string | null,
+  inviteName?: string | null
+): boolean {
+  if (isAdminInviteName(inviteName)) return true;
+  const url = (inviteLink || "").toLowerCase();
+  if (!url && !inviteName) return true; // search / t.me/w1nstr1k3
+  if (url.includes("w1nstr1k3")) return true;
+  if (cachedNamed && inviteLink === cachedNamed) return true;
+  return false;
 }
