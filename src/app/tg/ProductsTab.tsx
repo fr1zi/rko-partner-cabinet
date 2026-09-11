@@ -30,7 +30,7 @@ export function ProductsTab({
 }) {
   const isShop = mode === "shop";
   const title = isShop ? "Продукты" : "Премии";
-  const [bank, setBank] = useState<string>("all");
+  const [bank, setBank] = useState<string>(BANKS[0].label);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -46,8 +46,14 @@ export function ProductsTab({
     return [...known, ...extras];
   }, [products]);
 
+  useEffect(() => {
+    if (bankOptions.length === 0) return;
+    if (!bankOptions.some((b) => b.label === bank)) {
+      setBank(bankOptions[0].label);
+    }
+  }, [bankOptions, bank]);
+
   const filtered = useMemo(() => {
-    if (bank === "all") return products;
     return products.filter((p) => p.bank === bank);
   }, [products, bank]);
 
@@ -86,13 +92,6 @@ export function ProductsTab({
       )}
 
       <div className="tg-bank-filters" role="tablist" aria-label="Банки">
-        <button
-          type="button"
-          className={bank === "all" ? "tg-chip tg-chip-active" : "tg-chip"}
-          onClick={() => setBank("all")}
-        >
-          Все
-        </button>
         {bankOptions.map((b) => (
           <button
             key={b.key}

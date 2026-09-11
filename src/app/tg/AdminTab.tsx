@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BANKS } from "@/lib/banks";
 import type { AdminSubTab } from "./types";
 import { formatDate, formatProductLabel, money, statusLabel, tgHandle } from "./utils";
@@ -530,7 +530,7 @@ function AdminProductsEditor({
   onAction: (body: Record<string, unknown>) => Promise<void>;
   disabled?: boolean;
 }) {
-  const [bank, setBank] = useState<string>("all");
+  const [bank, setBank] = useState<string>(BANKS[0].label);
   const isPrices = mode === "prices";
 
   const bankOptions = useMemo(() => {
@@ -545,8 +545,14 @@ function AdminProductsEditor({
     return [...known, ...extras];
   }, [products]);
 
+  useEffect(() => {
+    if (bankOptions.length === 0) return;
+    if (!bankOptions.some((b) => b.label === bank)) {
+      setBank(bankOptions[0].label);
+    }
+  }, [bankOptions, bank]);
+
   const filtered = useMemo(() => {
-    if (bank === "all") return products;
     return products.filter((p) => (p.bank || "") === bank);
   }, [products, bank]);
 
@@ -558,13 +564,6 @@ function AdminProductsEditor({
           : "Премии трафферам по банкам. Цены подписчикам здесь не показываем."}
       </p>
       <div className="tg-bank-filters" role="tablist" aria-label="Банки">
-        <button
-          type="button"
-          className={bank === "all" ? "tg-chip tg-chip-active" : "tg-chip"}
-          onClick={() => setBank("all")}
-        >
-          Все
-        </button>
         {bankOptions.map((b) => (
           <button
             key={b.key}
