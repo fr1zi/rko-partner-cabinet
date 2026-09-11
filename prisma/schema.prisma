@@ -102,17 +102,19 @@ model ProductRate {
 }
 
 model BotUser {
-  id          String   @id @default(cuid())
-  telegramId  String   @unique
-  username    String?
-  firstName   String?
-  role        String   @default("subscriber")
-  referrerId  String?
-  referrer    BotUser?  @relation("BotRefs", fields: [referrerId], references: [id], onDelete: SetNull)
-  referrals   BotUser[] @relation("BotRefs")
-  balance     Float    @default(0)
-  isBanned    Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id             String   @id @default(cuid())
+  telegramId     String   @unique
+  username       String?
+  firstName      String?
+  role           String   @default("subscriber")
+  referrerId     String?
+  referrer       BotUser?  @relation("BotRefs", fields: [referrerId], references: [id], onDelete: SetNull)
+  referrals      BotUser[] @relation("BotRefs")
+  inviteLink     String?
+  inviteLinkName String?
+  balance        Float    @default(0)
+  isBanned       Boolean  @default(false)
+  createdAt      DateTime @default(now())
   leadsAsClient BotLead[] @relation("LeadClient")
   leadsAsRef    BotLead[] @relation("LeadRef")
   txs         LedgerTx[]

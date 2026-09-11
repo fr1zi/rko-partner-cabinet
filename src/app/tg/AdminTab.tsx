@@ -1,7 +1,7 @@
 "use client";
 
 import type { AdminSubTab } from "./types";
-import { money } from "./utils";
+import { formatDate, money } from "./utils";
 
 const SUBS: Array<[AdminSubTab, string]> = [
   ["stats", "Итоги"],
@@ -367,26 +367,105 @@ function AdminBody({
     const users = (data.users || []) as Array<{
       id: string;
       username: string | null;
+      firstName?: string | null;
       telegramId: string;
       role: string;
       balance: number;
       isBanned: boolean;
+      createdAt?: string;
+      refSource?: string | null;
+      issues?: Array<{
+        id: string;
+        status: string;
+        productId: string;
+        product: string;
+        premium: number;
+      }>;
     }>;
+    const products = (data.products || []) as Array<{
+      id: string;
+      title: string;
+      reward: number;
+    }>;
+    if (users.length === 0) return <div className="tg-empty">Пока нет юзеров</div>;
     return (
       <div className="tg-stack">
+        <p className="tg-note-plate">
+          Общая база: заход и чья рефка. Оформление ставится вручную — одно
+          или все продукты. Премия уходит трафферу.
+        </p>
         {users.map((u) => {
           const isAdm = u.role === "admin";
+          const issued = new Set((u.issues || []).map((x) => x.productId));
+          const left = products.filter((p) => !issued.has(p.id));
+          const roleRu =
+            u.role === "admin"
+              ? "админ"
+              : u.role === "traffer"
+                ? "траффер"
+                : "подписчик";
           return (
             <div key={u.id} className="tg-card space-y-3">
               <div>
                 <p className="tg-card-title">
                   {u.isBanned ? "🚫 " : ""}
-                  {u.username || u.telegramId}
+                  {u.username || u.firstName || u.telegramId}
                 </p>
                 <p className="tg-muted text-sm mt-1">
-                  {u.role} · {money(u.balance)}
+                  {roleRu} · рефка: {u.refSource || "Админы"}
+                </p>
+                <p className="tg-muted text-xs mt-1">
+                  {u.createdAt ? formatDate(u.createdAt) : ""}
                 </p>
               </div>
+              {(u.issues || []).length > 0 ? (
+                <div className="space-y-1">
+                  {(u.issues || []).map((iss) => (
+                    <p key={iss.id} className="text-xs">
+                      {iss.product} · {money(iss.premium)} · {iss.status}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="tg-muted text-xs">Продукты не оформлены</p>
+              )}
+              {!isAdm && left.length > 0 ? (
+                <div className="flex gap-2 flex-wrap">
+                  {left.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="tg-btn-secondary text-xs"
+                      disabled={disabled}
+                      onClick={() =>
+                        void onAction({
+                          action: "issue_products",
+                          userId: u.id,
+                          productId: p.id,
+                        })
+                      }
+                    >
+                      {p.title}
+                    </button>
+                  ))}
+                  {left.length > 1 ? (
+                    <button
+                      type="button"
+                      className="tg-btn-primary text-xs"
+                      disabled={disabled}
+                      onClick={() =>
+                        void onAction({
+                          action: "issue_products",
+                          userId: u.id,
+                          productIds: "all",
+                        })
+                      }
+                    >
+                      Оформить все
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               {!isAdm ? (
                 <div className="flex gap-2">
                   <button

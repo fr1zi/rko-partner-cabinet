@@ -5,6 +5,7 @@ export function money(n: number) {
 export function formatDate(iso: string) {
   try {
     return new Date(iso).toLocaleString("ru-RU", {
+      timeZone: "Asia/Yekaterinburg",
       day: "2-digit",
       month: "short",
       hour: "2-digit",

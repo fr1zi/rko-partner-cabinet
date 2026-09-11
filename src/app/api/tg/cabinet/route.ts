@@ -63,7 +63,8 @@ export async function GET() {
     refs.map(async (r) => {
       const ls = await prisma.botLead.findMany({
         where: { clientId: r.id },
-        select: { status: true },
+        include: { product: { select: { title: true, reward: true } } },
+        orderBy: { createdAt: "desc" },
       });
       let status: "approved" | "pending" | "none" = "none";
       if (ls.some((x) => x.status === "approved")) status = "approved";
@@ -76,6 +77,12 @@ export async function GET() {
         telegramId: r.telegramId,
         status,
         createdAt: r.createdAt,
+        issues: ls.map((x) => ({
+          id: x.id,
+          status: x.status,
+          product: x.product.title,
+          premium: x.product.reward,
+        })),
       };
     })
   );

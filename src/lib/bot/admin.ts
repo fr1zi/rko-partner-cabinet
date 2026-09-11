@@ -614,6 +614,13 @@ export async function setBotUserRole(
       if ("inviteLink" in inv) {
         inviteLine = `\nКанал (именная ссылка): ${inv.inviteLink}`;
         inviteNote = `\nInvite: ${inv.inviteLink} (${inv.name})`;
+        await prisma.botUser.update({
+          where: { id: updated.id },
+          data: {
+            inviteLink: inv.inviteLink,
+            inviteLinkName: inv.name || shortCode,
+          },
+        });
       } else {
         inviteNote = `\nInvite: не создан (${inv.error})`;
       }

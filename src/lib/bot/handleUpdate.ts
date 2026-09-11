@@ -10,6 +10,7 @@ import {
   ensureBotProducts,
   upsertBotUser,
   isTrafferBotUser,
+  findTrafferByInvite,
   type TgFrom,
 } from "@/lib/bot/users";
 import { clearScene, getSession, parsePayload } from "@/lib/bot/session";
@@ -140,6 +141,7 @@ async function handleChatMember(update: TgChatMemberUpdated) {
   const inviteName = invite?.name || null;
   // Still record organic joins (no named invite) — otherwise people "vanish" from stats
   const partner = await findPartnerByInvite(inviteLink, inviteName);
+  const traffer = await findTrafferByInvite(inviteLink, inviteName);
   const telegramId = String(user.id);
   const username = user.username ? `@${user.username}` : null;
   const firstName = user.first_name || null;
@@ -150,10 +152,12 @@ async function handleChatMember(update: TgChatMemberUpdated) {
   }
 
   // Anything that is not a traffer named invite = admin (t.me/w1nstr1k3, search, ADMIN +link)
-  const fromAdmin = !partner && isAdminJoinSource(inviteLink, inviteName);
-  const storedInviteName = partner
-    ? inviteName || partner.telegramInviteLinkName || partner.refCode
-    : inviteName || ADMIN_INVITE_NAME;
+  const fromAdmin = !traffer && isAdminJoinSource(inviteLink, inviteName);
+  const storedInviteName = traffer
+    ? inviteName || traffer.inviteLinkName || `t${traffer.telegramId.slice(-8)}`
+    : partner
+      ? inviteName || partner.telegramInviteLinkName || partner.refCode
+      : inviteName || ADMIN_INVITE_NAME;
   const storedInviteLink =
     inviteLink ||
     partner?.telegramInviteLink ||
@@ -210,6 +214,9 @@ async function handleChatMember(update: TgChatMemberUpdated) {
         username,
         firstName,
         role: "subscriber",
+        referrerId: traffer && traffer.telegramId !== telegramId ? traffer.id : null,
+        inviteLinkName: storedInviteName,
+        inviteLink: storedInviteLink,
       },
     });
   } else {
@@ -218,6 +225,13 @@ async function handleChatMember(update: TgChatMemberUpdated) {
       data: {
         username: username ?? undefined,
         firstName: firstName ?? undefined,
+        referrerId: existing.referrerId
+          ? undefined
+          : traffer && traffer.id !== existing.id
+            ? traffer.id
+            : undefined,
+        inviteLinkName: existing.inviteLinkName || storedInviteName || undefined,
+        inviteLink: existing.inviteLink || storedInviteLink || undefined,
       },
     });
   }

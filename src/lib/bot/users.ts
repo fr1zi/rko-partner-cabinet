@@ -248,3 +248,41 @@ export function refLinkFor(telegramId: string): string {
     "rko_referal_bot";
   return `https://t.me/${bot}?start=ref_${telegramId}`;
 }
+
+
+export function trafferInviteCode(telegramId: string) {
+  return `t${telegramId.slice(-8)}`;
+}
+
+export async function findTrafferByInvite(
+  inviteLink?: string | null,
+  inviteName?: string | null
+) {
+  const name = inviteName?.trim() || null;
+  const url = inviteLink?.trim() || null;
+  if (name) {
+    const byName = await prisma.botUser.findFirst({
+      where: {
+        role: "traffer",
+        OR: [
+          { inviteLinkName: name },
+          { telegramId: { endsWith: name.replace(/^t/, "") } },
+        ],
+      },
+    });
+    if (byName) return byName;
+    if (name.startsWith("t") && name.length >= 5) {
+      const tail = name.slice(1);
+      const byTail = await prisma.botUser.findFirst({
+        where: { role: "traffer", telegramId: { endsWith: tail } },
+      });
+      if (byTail) return byTail;
+    }
+  }
+  if (url) {
+    return prisma.botUser.findFirst({
+      where: { role: "traffer", inviteLink: url },
+    });
+  }
+  return null;
+}

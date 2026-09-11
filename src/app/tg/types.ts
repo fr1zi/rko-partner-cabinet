@@ -48,6 +48,13 @@ export type CabinetData = {
     firstName: string | null;
     telegramId: string;
     status: string;
+    createdAt?: string;
+    issues?: Array<{
+      id: string;
+      status: string;
+      product: string;
+      premium: number;
+    }>;
   }>;
   withdrawals: Array<{
     id: string;

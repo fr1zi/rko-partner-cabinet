@@ -48,11 +48,50 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ withdrawals });
   }
   if (tab === "users") {
-    const users = await prisma.botUser.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 200,
+    const [users, products] = await Promise.all([
+      prisma.botUser.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        include: {
+          referrer: { select: { id: true, username: true, firstName: true, role: true } },
+          leadsAsClient: {
+            include: { product: { select: { id: true, title: true, reward: true } } },
+            orderBy: { createdAt: "desc" },
+          },
+        },
+      }),
+      prisma.botProduct.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, title: true, reward: true },
+      }),
+    ]);
+    return NextResponse.json({
+      products,
+      users: users.map((u) => ({
+        id: u.id,
+        username: u.username,
+        firstName: u.firstName,
+        telegramId: u.telegramId,
+        role: u.role,
+        balance: u.balance,
+        isBanned: u.isBanned,
+        createdAt: u.createdAt,
+        inviteLinkName: u.inviteLinkName,
+        refSource:
+          u.referrer?.username ||
+          u.referrer?.firstName ||
+          (u.inviteLinkName === "ADMIN" || !u.referrerId ? "Админы" : null) ||
+          "Админы",
+        issues: u.leadsAsClient.map((l) => ({
+          id: l.id,
+          status: l.status,
+          productId: l.product.id,
+          product: l.product.title,
+          premium: l.product.reward,
+        })),
+      })),
     });
-    return NextResponse.json({ users });
   }
 
   const [trafters, clients, leads, sum, audience] = await Promise.all([
@@ -334,22 +373,29 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    const roleData: {
+      role: string;
+      inviteLink?: string;
+      inviteLinkName?: string;
+    } = { role: nextRole };
+    let inviteLine = "";
+    if (nextRole === "traffer" && isChannelInviteConfigured()) {
+      const inv = await createNamedInviteLink(
+        `t${u.telegramId.slice(-8)}`
+      );
+      if ("inviteLink" in inv) {
+        roleData.inviteLink = inv.inviteLink;
+        roleData.inviteLinkName = inv.name || `t${u.telegramId.slice(-8)}`;
+        inviteLine = `\nКанал (именная ссылка): ${inv.inviteLink}`;
+      }
+    }
     const updated = await prisma.botUser.update({
       where: { id },
-      data: { role: nextRole },
+      data: roleData,
     });
     try {
       if (nextRole === "traffer") {
         const ref = refLinkFor(updated.telegramId);
-        let inviteLine = "";
-        if (isChannelInviteConfigured()) {
-          const inv = await createNamedInviteLink(
-            `t${updated.telegramId.slice(-8)}`
-          );
-          if ("inviteLink" in inv) {
-            inviteLine = `\nКанал (именная ссылка): ${inv.inviteLink}`;
-          }
-        }
         await sendMessage(
           updated.telegramId,
           `✅ Вам выдали роль траффера.\n\n🔗 Ваша реф-ссылка:\n<code>${ref}</code>${inviteLine}`
@@ -364,6 +410,80 @@ export async function POST(req: NextRequest) {
       /* blocked */
     }
     return NextResponse.json({ ok: true, user: updated });
+  }
+
+
+  if (action === "issue_products") {
+    const userId = String(body.userId || body.id || "");
+    const client = await prisma.botUser.findUnique({
+      where: { id: userId },
+      include: { referrer: true },
+    });
+    if (!client) return NextResponse.json({ error: "not found" }, { status: 404 });
+    const all = body.productIds === "all" || body.all === true;
+    let productIds: string[] = Array.isArray(body.productIds)
+      ? body.productIds.map(String)
+      : body.productId
+        ? [String(body.productId)]
+        : [];
+    const products = all
+      ? await prisma.botProduct.findMany({ where: { isActive: true } })
+      : await prisma.botProduct.findMany({ where: { id: { in: productIds } } });
+    if (products.length === 0) {
+      return NextResponse.json({ error: "нет продуктов" }, { status: 400 });
+    }
+    const created: string[] = [];
+    for (const product of products) {
+      const dup = await prisma.botLead.findFirst({
+        where: {
+          clientId: client.id,
+          productId: product.id,
+          status: { in: ["new", "approved"] },
+        },
+      });
+      if (dup) continue;
+      const lead = await prisma.botLead.create({
+        data: {
+          clientId: client.id,
+          referrerId: client.referrerId,
+          productId: product.id,
+          fullName: client.firstName || client.username || "",
+          status: "approved",
+          approvedAt: new Date(),
+          adminComment: "оформлено вручную",
+        },
+      });
+      created.push(lead.id);
+      if (client.referrerId && product.reward) {
+        const existingCredit = await prisma.ledgerTx.findFirst({
+          where: { leadId: lead.id, type: "credit_lead" },
+        });
+        if (!existingCredit) {
+          await prisma.$transaction([
+            prisma.botUser.update({
+              where: { id: client.referrerId },
+              data: { balance: { increment: product.reward } },
+            }),
+            prisma.ledgerTx.create({
+              data: {
+                userId: client.referrerId,
+                amount: product.reward,
+                type: "credit_lead",
+                leadId: lead.id,
+                comment: `Оформление ${product.title}`,
+              },
+            }),
+          ]);
+          if (client.referrer) {
+            await sendMessage(
+              client.referrer.telegramId,
+              `✅ Оформлен ${client.username || client.firstName || "клиент"}: ${product.title}. Начислено ${formatMoney(product.reward)}.`
+            );
+          }
+        }
+      }
+    }
+    return NextResponse.json({ ok: true, created: created.length });
   }
 
   return NextResponse.json({ error: "unknown action" }, { status: 400 });
