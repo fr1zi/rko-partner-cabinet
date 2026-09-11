@@ -389,7 +389,7 @@ export async function POST(req: NextRequest) {
     });
     if (!client) return NextResponse.json({ error: "not found" }, { status: 404 });
     const all = body.productIds === "all" || body.all === true;
-    let productIds: string[] = Array.isArray(body.productIds)
+    const productIds: string[] = Array.isArray(body.productIds)
       ? body.productIds.map(String)
       : body.productId
         ? [String(body.productId)]
