@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isChannelAdmin } from "@/lib/bot/channelAdmins";
+import { isChannelAdmin, getChannelSubscriberCount } from "@/lib/bot/channelAdmins";
 import { ensureBotProducts, formatMoney } from "@/lib/bot/users";
 import {
   sendMessage,
@@ -55,20 +55,26 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ users });
   }
 
-  const traffers = await prisma.botUser.count({
-    where: { role: { in: ["traffer", "admin"] } },
-  });
-  const clients = await prisma.botUser.count({ where: { role: { in: ["client", "subscriber"] } } });
-  const leads = await prisma.botLead.count();
-  const sum = await prisma.ledgerTx.aggregate({
-    where: { type: "credit_lead" },
-    _sum: { amount: true },
-  });
+  const [trafters, clients, leads, sum, channelSubscribers] = await Promise.all([
+    prisma.botUser.count({
+      where: { role: { in: ["traffer", "admin"] } },
+    }),
+    prisma.botUser.count({
+      where: { role: { in: ["client", "subscriber"] } },
+    }),
+    prisma.botLead.count(),
+    prisma.ledgerTx.aggregate({
+      where: { type: "credit_lead" },
+      _sum: { amount: true },
+    }),
+    getChannelSubscriberCount(),
+  ]);
   return NextResponse.json({
     stats: {
-      traffers,
+      trafters,
       clients,
       leads,
+      channelSubscribers: channelSubscribers ?? 0,
       credited: sum._sum.amount || 0,
       creditedLabel: formatMoney(sum._sum.amount || 0),
     },

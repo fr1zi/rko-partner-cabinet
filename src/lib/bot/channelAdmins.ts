@@ -67,3 +67,25 @@ export function isChannelMemberStatus(status: string | null): boolean {
     status === "creator"
   );
 }
+
+type CountCache = { count: number; fetchedAt: number };
+let memberCountCache: CountCache | null = null;
+
+/** Total members in the channel (Telegram getChatMemberCount). */
+export async function getChannelSubscriberCount(
+  force = false
+): Promise<number | null> {
+  if (
+    !force &&
+    memberCountCache &&
+    Date.now() - memberCountCache.fetchedAt < TTL_MS
+  ) {
+    return memberCountCache.count;
+  }
+  const chatId = getTelegramChannelId();
+  if (!chatId) return null;
+  const data = await tgApi<number>("getChatMemberCount", { chat_id: chatId });
+  if (!data.ok || typeof data.result !== "number") return null;
+  memberCountCache = { count: data.result, fetchedAt: Date.now() };
+  return data.result;
+}

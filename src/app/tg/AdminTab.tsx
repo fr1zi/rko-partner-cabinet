@@ -75,6 +75,11 @@ function AdminBody({
     const s = (data.stats || {}) as Record<string, unknown>;
     return (
       <div className="tg-stat-grid">
+        <StatTile
+          label="Подписчики канала"
+          value={String(s.channelSubscribers ?? 0)}
+          wide
+        />
         <StatTile label="Трафферы" value={String(s.trafters ?? 0)} />
         <StatTile label="Клиенты" value={String(s.clients ?? 0)} />
         <StatTile label="Заявки" value={String(s.leads ?? 0)} />

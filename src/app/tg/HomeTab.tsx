@@ -8,6 +8,7 @@ export type AdminHomeStats = {
   trafters?: number;
   clients?: number;
   leads?: number;
+  channelSubscribers?: number;
   credited?: number;
   creditedLabel?: string;
 };
@@ -41,6 +42,11 @@ export function HomeTab({
   if (isAdmin) {
     const s = adminStats || {};
     const tiles = [
+      {
+        label: "Подписчики канала",
+        value: String(s.channelSubscribers ?? 0),
+        wide: true,
+      },
       { label: "Трафферы", value: String(s.trafters ?? 0) },
       { label: "Клиенты", value: String(s.clients ?? 0) },
       { label: "Заявки", value: String(s.leads ?? 0) },

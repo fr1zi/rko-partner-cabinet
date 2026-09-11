@@ -354,6 +354,7 @@ export default function TelegramMiniAppPage() {
                             trafters?: number;
                             clients?: number;
                             leads?: number;
+                            channelSubscribers?: number;
                             credited?: number;
                             creditedLabel?: string;
                           }
