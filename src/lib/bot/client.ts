@@ -236,7 +236,7 @@ async function createLead(
     `📥 Новая заявка (в обработке)\n` +
       `Клиент: ${fullName} (${uname})\n` +
       `Тел: ${phone}\n` +
-      `Продукт: ${product.title}\n` +
+      `Продукт: ${product.bank ? `${product.title} · ${product.bank}` : product.title}\n` +
       `ID: ${lead.id}`
   );
 

@@ -21,7 +21,7 @@ export type AdminPerson = {
   }>;
 };
 
-export type AdminProductOpt = { id: string; title: string; reward: number };
+export type AdminProductOpt = { id: string; title: string; bank?: string; reward: number };
 
 export function PeopleTab({
   referrals,

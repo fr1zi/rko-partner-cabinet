@@ -47,3 +47,27 @@ export function txTypeLabel(type: string) {
   };
   return map[type] || type;
 }
+
+
+/** Prefer @username; fall back to telegram id — never firstName as primary. */
+export function tgHandle(
+  username?: string | null,
+  telegramId?: string | null,
+  fallback?: string | null
+) {
+  const u = (username || "").replace(/^@/, "").trim();
+  if (u) return `@${u}`;
+  if (telegramId) return `id ${telegramId}`;
+  const f = (fallback || "").trim();
+  return f || "—";
+}
+
+
+export function formatProductLabel(
+  title?: string | null,
+  bank?: string | null
+) {
+  const t = (title || "").trim() || "Продукт";
+  const b = (bank || "").trim();
+  return b ? `${t} · ${b}` : t;
+}

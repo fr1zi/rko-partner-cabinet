@@ -150,7 +150,9 @@ export async function GET() {
     applications: myLeads.map((l) => ({
       id: l.id,
       status: normalizeLeadStatus(l.status),
-      product: l.product.title,
+      product: l.product.bank
+        ? `${l.product.title} · ${l.product.bank}`
+        : l.product.title,
       subscriberAmount: l.subscriberAmount ?? l.product.subscriberPrice,
       premium: l.premiumAmount ?? l.product.reward,
       createdAt: l.createdAt,
@@ -159,7 +161,7 @@ export async function GET() {
     leads: leads.map((l) => ({
       id: l.id,
       status: l.status,
-      product: l.product.title,
+      product: l.product.bank ? `${l.product.title} · ${l.product.bank}` : l.product.title,
       client: l.client.username || l.client.telegramId,
       fullName: l.fullName,
       createdAt: l.createdAt,
@@ -250,13 +252,15 @@ export async function POST(req: NextRequest) {
         clientId: user.id,
         referrerId: user.referrerId,
         productId,
-        fullName: user.firstName || user.username || "",
+        fullName: user.username
+          ? `@${String(user.username).replace(/^@/, "")}`
+          : user.firstName || user.telegramId || "",
         phone: String(body.phone || ""),
         status: "processing",
       },
     });
     await sendToAdmins(
-      `📥 Новая заявка (в обработке)\nКлиент: ${user.username || user.firstName || user.telegramId}\nПродукт: ${product.title}\nID: ${lead.id}`
+      `📥 Новая заявка (в обработке)\nКлиент: ${user.username ? `@${String(user.username).replace(/^@/, "")}` : `id ${user.telegramId}`}\nПродукт: ${product.bank ? `${product.title} · ${product.bank}` : product.title}\nID: ${lead.id}`
     );
     if (user.referrerId) {
       const ref = await prisma.botUser.findUnique({ where: { id: user.referrerId } });
@@ -264,7 +268,7 @@ export async function POST(req: NextRequest) {
         try {
           await sendMessage(
             ref.telegramId,
-            `🔔 Новая заявка от реферала ${user.username || user.telegramId}: ${product.title}`
+            `🔔 Новая заявка от реферала ${user.username ? `@${String(user.username).replace(/^@/, "")}` : user.telegramId}: ${product.bank ? `${product.title} · ${product.bank}` : product.title}`
           );
         } catch {
           /* blocked */

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_PRODUCT_RATES } from "@/lib/productDefaults";
+import { catalogEntries } from "@/lib/productDefaults";
 import { isChannelAdmin } from "@/lib/bot/channelAdmins";
 
 export type TgFrom = {
@@ -164,65 +164,55 @@ export async function resolveUserShort(short: string) {
   return all.find((u) => u.id.startsWith(short));
 }
 
-const TITLE_BY_KEY: Record<string, string> = {
-  rko: "РКО (открытие счёта)",
-  debit_card: "Дебетовая карта",
-  credit_card: "Кредитная карта",
-  acquiring: "Эквайринг",
-  salary_project: "Зарплатный проект",
-  deposit: "Депозит для бизнеса",
-};
-
 let productsEnsured = false;
 
 export async function ensureBotProducts(): Promise<void> {
   if (productsEnsured) return;
   try {
-  for (const r of DEFAULT_PRODUCT_RATES) {
-    const title = TITLE_BY_KEY[r.productKey] || r.productName;
-    const existing = await prisma.botProduct.findFirst({ where: { title } });
-    if (existing) {
-      const subscriberPrice =
-        existing.subscriberPrice && existing.subscriberPrice > 0
-          ? existing.subscriberPrice
-          : existing.reward || r.premium;
-      await prisma.botProduct.update({
-        where: { id: existing.id },
-        data: {
-          reward: r.premium,
-          subscriberPrice,
-          rewardType: "fixed",
-          isActive: true,
-        },
+    const catalog = catalogEntries();
+
+    // Legacy rows without a bank — keep for lead history, hide from feeds
+    await prisma.botProduct.updateMany({
+      where: { bank: "" },
+      data: { isActive: false },
+    });
+
+    for (const entry of catalog) {
+      const existing = await prisma.botProduct.findFirst({
+        where: { title: entry.title, bank: entry.bank },
       });
-    } else {
-      await prisma.botProduct.create({
-        data: {
-          title,
-          bank: "",
-          description: r.productName,
-          reward: r.premium,
-          subscriberPrice: r.premium,
-          rewardType: "fixed",
-          url: "",
-          isActive: true,
-        },
-      });
+      if (existing) {
+        // Never clobber admin-edited prices/premiums
+        await prisma.botProduct.update({
+          where: { id: existing.id },
+          data: {
+            description: existing.description || entry.description,
+            rewardType: "fixed",
+            isActive: true,
+            ...(existing.subscriberPrice <= 0 && existing.reward > 0
+              ? { subscriberPrice: existing.reward }
+              : existing.subscriberPrice <= 0
+                ? { subscriberPrice: entry.subscriberPrice }
+                : {}),
+          },
+        });
+      } else {
+        await prisma.botProduct.create({
+          data: {
+            title: entry.title,
+            bank: entry.bank,
+            description: entry.description,
+            reward: entry.reward,
+            subscriberPrice: entry.subscriberPrice,
+            rewardType: "fixed",
+            url: "",
+            isActive: true,
+          },
+        });
+      }
     }
-  }
-  // Backfill any products with subscriberPrice 0 from reward
-  const zeroPrice = await prisma.botProduct.findMany({
-    where: { subscriberPrice: 0 },
-  });
-  for (const p of zeroPrice) {
-    if (p.reward > 0) {
-      await prisma.botProduct.update({
-        where: { id: p.id },
-        data: { subscriberPrice: p.reward },
-      });
-    }
-  }
-  productsEnsured = true;
+
+    productsEnsured = true;
   } catch (e) {
     productsEnsured = false;
     throw e;

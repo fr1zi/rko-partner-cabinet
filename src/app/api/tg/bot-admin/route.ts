@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
         include: {
           referrer: { select: { id: true, username: true, firstName: true, role: true } },
           leadsAsClient: {
-            include: { product: { select: { id: true, title: true, reward: true } } },
+            include: { product: { select: { id: true, title: true, bank: true, reward: true } } },
             orderBy: { createdAt: "desc" },
           },
         },
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
       prisma.botProduct.findMany({
         where: { isActive: true },
         orderBy: { createdAt: "asc" },
-        select: { id: true, title: true, reward: true },
+        select: { id: true, title: true, bank: true, reward: true },
       }),
       prisma.subscriber.findMany({
         select: {
@@ -102,7 +102,9 @@ export async function GET(req: NextRequest) {
             id: l.id,
             status: l.status,
             productId: l.product.id,
-            product: l.product.title,
+            product: l.product.bank
+              ? `${l.product.title} · ${l.product.bank}`
+              : l.product.title,
             premium: l.product.reward,
           })),
         };
@@ -415,7 +417,9 @@ export async function POST(req: NextRequest) {
           clientId: client.id,
           referrerId: client.referrerId,
           productId: product.id,
-          fullName: client.firstName || client.username || "",
+          fullName: client.username
+            ? `@${String(client.username).replace(/^@/, "")}`
+            : client.firstName || client.telegramId || "",
           status: "processing",
           adminComment: "оформлено вручную",
         },

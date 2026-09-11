@@ -25,7 +25,7 @@ export const DEMO_CABINET: CabinetData = {
     {
       id: "demo-p1",
       title: "РКО для ИП",
-      bank: "Тинькофф Бизнес",
+      bank: "Т-Банк",
       description: "Открытие счёта для ИП, 18+",
       reward: 3500,
       subscriberPrice: 3500,
@@ -36,7 +36,7 @@ export const DEMO_CABINET: CabinetData = {
     {
       id: "demo-p2",
       title: "РКО для ООО",
-      bank: "СберБизнес",
+      bank: "Сбербанк",
       description: "Расчётный счёт для юрлиц",
       reward: 5000,
       subscriberPrice: 5000,
@@ -124,7 +124,8 @@ export const DEMO_ADMIN = {
   products: [
     {
       id: "demo-ap1",
-      title: "РКО для ИП",
+      title: "РКО (открытие счёта)",
+      bank: "Альфа-Банк",
       reward: 3500,
       subscriberPrice: 3500,
       isActive: true,
@@ -132,9 +133,19 @@ export const DEMO_ADMIN = {
     },
     {
       id: "demo-ap2",
-      title: "РКО для ООО",
-      reward: 5000,
-      subscriberPrice: 5000,
+      title: "РКО (открытие счёта)",
+      bank: "Т-Банк",
+      reward: 3200,
+      subscriberPrice: 3200,
+      isActive: true,
+      isHot: false,
+    },
+    {
+      id: "demo-ap3",
+      title: "Дебетовая карта",
+      bank: "Сбербанк",
+      reward: 1500,
+      subscriberPrice: 1500,
       isActive: true,
       isHot: false,
     },
@@ -146,7 +157,7 @@ export const DEMO_ADMIN = {
       fullName: "Пётр Сидоров",
       phone: "+7 900 111-22-33",
       product: { title: "РКО для ИП" },
-      client: { username: "petr_s", telegramId: "444" },
+      client: { username: "petr_s", telegramId: "444", firstName: "Пётр" },
     },
   ],
   withdrawals: [

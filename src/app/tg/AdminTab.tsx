@@ -1,7 +1,9 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import { BANKS } from "@/lib/banks";
 import type { AdminSubTab } from "./types";
-import { formatDate, money, statusLabel } from "./utils";
+import { formatDate, formatProductLabel, money, statusLabel, tgHandle } from "./utils";
 
 const SUBS: Array<[AdminSubTab, string]> = [
   ["stats", "Итоги"],
@@ -93,158 +95,24 @@ function AdminBody({
   }
 
   if (tab === "products") {
-    const products = (data.products || []) as Array<{
-      id: string;
-      title: string;
-      reward: number;
-      subscriberPrice: number;
-      isActive: boolean;
-      isHot: boolean;
-    }>;
     return (
-      <div className="tg-stack">
-        <p className="tg-note-plate">
-          Меняйте текущую цену. Премии — во вкладке «Премии».
-        </p>
-        {products.map((p) => (
-          <div key={p.id} className="tg-card space-y-3">
-            <div className="tg-product-title-row">
-              <p className="tg-card-title">{p.title}</p>
-              {p.isHot ? <span className="tg-hot-badge">HOT</span> : null}
-              <span
-                className={
-                  p.isActive
-                    ? "tg-status tg-status-approved"
-                    : "tg-status tg-status-none"
-                }
-              >
-                {p.isActive ? "Вкл" : "Выкл"}
-              </span>
-            </div>
-            <div className="tg-edit-block">
-              <label className="tg-label">Цена для подписчика, ₽</label>
-              <input
-                className="tg-input"
-                type="number"
-                defaultValue={p.subscriberPrice ?? p.reward}
-                disabled={disabled}
-                id={`price-${p.id}`}
-              />
-            </div>
-            <button
-              type="button"
-              className="tg-btn-primary w-full text-sm"
-              disabled={disabled}
-              onClick={() => {
-                const el = document.getElementById(
-                  `price-${p.id}`
-                ) as HTMLInputElement | null;
-                const subscriberPrice = Number(
-                  el?.value || p.subscriberPrice || p.reward
-                );
-                void onAction({
-                  action: "product_update",
-                  id: p.id,
-                  subscriberPrice,
-                });
-              }}
-            >
-              Сохранить цену
-            </button>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="tg-btn-secondary text-xs flex-1"
-                disabled={disabled}
-                onClick={() =>
-                  void onAction({ action: "product_toggle", id: p.id })
-                }
-              >
-                {p.isActive ? "Выключить" : "Включить"}
-              </button>
-              <button
-                type="button"
-                className="tg-btn-secondary text-xs flex-1"
-                disabled={disabled}
-                onClick={() =>
-                  void onAction({
-                    action: "product_hot",
-                    id: p.id,
-                    isHot: !p.isHot,
-                    hotText: "Акция",
-                    days: 7,
-                  })
-                }
-              >
-                {p.isHot ? "Снять HOT" : "HOT 7д"}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      <AdminProductsEditor
+        mode="prices"
+        products={(data.products || []) as AdminProductRow[]}
+        onAction={onAction}
+        disabled={disabled}
+      />
     );
   }
 
   if (tab === "premiums") {
-    const products = (data.products || []) as Array<{
-      id: string;
-      title: string;
-      reward: number;
-      subscriberPrice: number;
-      isActive: boolean;
-      isHot: boolean;
-    }>;
     return (
-      <div className="tg-stack">
-        <p className="tg-note-plate">
-          Только премии трафферам. Цены подписчикам здесь не показываем.
-        </p>
-        {products.map((p) => (
-          <div key={p.id} className="tg-card space-y-3">
-            <div className="tg-product-title-row">
-              <p className="tg-card-title">{p.title}</p>
-              {p.isHot ? <span className="tg-hot-badge">HOT</span> : null}
-              <span
-                className={
-                  p.isActive
-                    ? "tg-status tg-status-approved"
-                    : "tg-status tg-status-none"
-                }
-              >
-                {p.isActive ? "Вкл" : "Выкл"}
-              </span>
-            </div>
-            <div className="tg-edit-block">
-              <label className="tg-label">Премия трафферу, ₽</label>
-              <input
-                className="tg-input"
-                type="number"
-                defaultValue={p.reward}
-                disabled={disabled}
-                id={`prem-${p.id}`}
-              />
-            </div>
-            <button
-              type="button"
-              className="tg-btn-primary w-full text-sm"
-              disabled={disabled}
-              onClick={() => {
-                const el = document.getElementById(
-                  `prem-${p.id}`
-                ) as HTMLInputElement | null;
-                const reward = Number(el?.value || p.reward);
-                void onAction({
-                  action: "product_update",
-                  id: p.id,
-                  reward,
-                });
-              }}
-            >
-              Сохранить премию
-            </button>
-          </div>
-        ))}
-      </div>
+      <AdminProductsEditor
+        mode="premiums"
+        products={(data.products || []) as AdminProductRow[]}
+        onAction={onAction}
+        disabled={disabled}
+      />
     );
   }
 
@@ -256,9 +124,9 @@ function AdminBody({
       phone: string;
       subscriberAmount?: number | null;
       premiumAmount?: number | null;
-      product: { title: string; subscriberPrice?: number; reward?: number };
+      product: { title: string; bank?: string; subscriberPrice?: number; reward?: number };
       client: { username: string | null; telegramId: string; firstName?: string | null };
-      referrer?: { username: string | null; firstName?: string | null } | null;
+      referrer?: { username: string | null; telegramId?: string; firstName?: string | null } | null;
     }>;
     if (leads.length === 0) return <div className="tg-empty">Нет заявок</div>;
     return (
@@ -275,16 +143,23 @@ function AdminBody({
               : l.status;
           const defAmt = l.subscriberAmount ?? l.product.subscriberPrice ?? 0;
           const prem = l.premiumAmount ?? l.product.reward ?? 0;
-          const refName =
-            l.referrer?.username || l.referrer?.firstName || "Админы";
+          const who = tgHandle(l.client.username, l.client.telegramId);
+          const refName = l.referrer
+            ? tgHandle(l.referrer.username, l.referrer.telegramId, "Админы")
+            : "Админы";
+          const productLabel = formatProductLabel(
+            l.product.title,
+            l.product.bank
+          );
           return (
             <div key={l.id} className="tg-card space-y-3">
               <div>
-                <p className="tg-card-title">
-                  {l.fullName || l.client.username || l.client.telegramId}
-                </p>
+                <p className="tg-card-title">{who}</p>
+                {l.fullName ? (
+                  <p className="tg-muted text-xs mt-1">ФИО в заявке: {l.fullName}</p>
+                ) : null}
                 <p className="tg-muted text-sm mt-1">
-                  {l.product.title}
+                  {productLabel}
                   {l.phone ? ` · ${l.phone}` : ""}
                 </p>
                 <p className="tg-muted text-xs mt-1">рефка: {refName}</p>
@@ -483,7 +358,7 @@ function AdminBody({
               <div>
                 <p className="tg-card-title">
                   {u.isBanned ? "🚫 " : ""}
-                  {u.username || u.firstName || u.telegramId}
+                  {tgHandle(u.username, u.telegramId, u.firstName)}
                 </p>
                 <p className="tg-muted text-sm mt-1">
                   {roleRu} · рефка: {u.refSource || "Админы"}
@@ -629,6 +504,177 @@ function StatTile({
     <div className={wide ? "tg-stat-tile tg-stat-wide" : "tg-stat-tile"}>
       <p className="tg-stat-label">{label}</p>
       <p className="tg-stat-value">{value}</p>
+    </div>
+  );
+}
+
+
+type AdminProductRow = {
+  id: string;
+  title: string;
+  bank?: string;
+  reward: number;
+  subscriberPrice: number;
+  isActive: boolean;
+  isHot: boolean;
+};
+
+function AdminProductsEditor({
+  mode,
+  products,
+  onAction,
+  disabled,
+}: {
+  mode: "prices" | "premiums";
+  products: AdminProductRow[];
+  onAction: (body: Record<string, unknown>) => Promise<void>;
+  disabled?: boolean;
+}) {
+  const [bank, setBank] = useState<string>("all");
+  const isPrices = mode === "prices";
+
+  const bankOptions = useMemo(() => {
+    const present = new Set(
+      products.map((p) => p.bank || "").filter(Boolean)
+    );
+    const known = BANKS.filter((b) => present.has(b.label));
+    const extras = Array.from(present)
+      .filter((label) => !BANKS.some((b) => b.label === label))
+      .sort()
+      .map((label) => ({ key: label, label, short: label }));
+    return [...known, ...extras];
+  }, [products]);
+
+  const filtered = useMemo(() => {
+    if (bank === "all") return products;
+    return products.filter((p) => (p.bank || "") === bank);
+  }, [products, bank]);
+
+  return (
+    <div className="tg-stack">
+      <p className="tg-note-plate">
+        {isPrices
+          ? "Цены для подписчика по банкам. Премии — во вкладке «Премии»."
+          : "Премии трафферам по банкам. Цены подписчикам здесь не показываем."}
+      </p>
+      <div className="tg-bank-filters" role="tablist" aria-label="Банки">
+        <button
+          type="button"
+          className={bank === "all" ? "tg-chip tg-chip-active" : "tg-chip"}
+          onClick={() => setBank("all")}
+        >
+          Все
+        </button>
+        {bankOptions.map((b) => (
+          <button
+            key={b.key}
+            type="button"
+            className={bank === b.label ? "tg-chip tg-chip-active" : "tg-chip"}
+            onClick={() => setBank(b.label)}
+          >
+            {b.short}
+          </button>
+        ))}
+      </div>
+      {filtered.length === 0 ? (
+        <div className="tg-empty">
+          <p>Нет продуктов для этого банка</p>
+        </div>
+      ) : (
+        filtered.map((p) => (
+          <div key={p.id} className="tg-card space-y-3">
+            <div className="tg-product-title-row">
+              <div className="min-w-0 flex-1">
+                <p className="tg-card-title">{p.title}</p>
+                {p.bank ? <p className="tg-product-bank">{p.bank}</p> : null}
+              </div>
+              {p.isHot ? <span className="tg-hot-badge">HOT</span> : null}
+              <span
+                className={
+                  p.isActive
+                    ? "tg-status tg-status-approved"
+                    : "tg-status tg-status-none"
+                }
+              >
+                {p.isActive ? "Вкл" : "Выкл"}
+              </span>
+            </div>
+            <div className="tg-edit-block">
+              <label className="tg-label">
+                {isPrices ? "Цена для подписчика, ₽" : "Премия трафферу, ₽"}
+              </label>
+              <input
+                className="tg-input"
+                type="number"
+                defaultValue={
+                  isPrices ? p.subscriberPrice ?? p.reward : p.reward
+                }
+                disabled={disabled}
+                id={`${isPrices ? "price" : "prem"}-${p.id}`}
+              />
+            </div>
+            <button
+              type="button"
+              className="tg-btn-primary w-full text-sm"
+              disabled={disabled}
+              onClick={() => {
+                const el = document.getElementById(
+                  `${isPrices ? "price" : "prem"}-${p.id}`
+                ) as HTMLInputElement | null;
+                if (isPrices) {
+                  const subscriberPrice = Number(
+                    el?.value || p.subscriberPrice || p.reward
+                  );
+                  void onAction({
+                    action: "product_update",
+                    id: p.id,
+                    subscriberPrice,
+                  });
+                } else {
+                  const reward = Number(el?.value || p.reward);
+                  void onAction({
+                    action: "product_update",
+                    id: p.id,
+                    reward,
+                  });
+                }
+              }}
+            >
+              {isPrices ? "Сохранить цену" : "Сохранить премию"}
+            </button>
+            {isPrices ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs flex-1"
+                  disabled={disabled}
+                  onClick={() =>
+                    void onAction({ action: "product_toggle", id: p.id })
+                  }
+                >
+                  {p.isActive ? "Выключить" : "Включить"}
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs flex-1"
+                  disabled={disabled}
+                  onClick={() =>
+                    void onAction({
+                      action: "product_hot",
+                      id: p.id,
+                      isHot: !p.isHot,
+                      hotText: "Акция",
+                      days: 7,
+                    })
+                  }
+                >
+                  {p.isHot ? "Снять HOT" : "HOT 7д"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ))
+      )}
     </div>
   );
 }
