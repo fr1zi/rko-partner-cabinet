@@ -45,9 +45,7 @@ function useTelegramBoot(onReady: (initData: string) => void) {
       onReady(initData);
     };
 
-    const applyWebApp = () => {
-      const wa = window.Telegram?.WebApp;
-      if (!wa) return false;
+    const paint = (wa: NonNullable<NonNullable<typeof window.Telegram>["WebApp"]>) => {
       try {
         wa.ready();
         wa.expand();
@@ -56,34 +54,33 @@ function useTelegramBoot(onReady: (initData: string) => void) {
       } catch {
         /* older clients */
       }
-      finish(wa.initData || "");
-      return true;
     };
 
-    // Already injected (Desktop sometimes has it before script onLoad)
-    if (applyWebApp()) return;
-
-    if (scriptReady && applyWebApp()) return;
-
-    // Poll briefly — Telegram Desktop may inject WebApp after the script tag
     const started = Date.now();
     const poll = window.setInterval(() => {
-      if (applyWebApp() || Date.now() - started > 2500) {
+      const wa = window.Telegram?.WebApp;
+      if (!wa) {
+        // No WebApp yet — after CDN grace, give up with empty (not demo)
+        if (scriptReady && Date.now() - started > 4000) {
+          window.clearInterval(poll);
+          finish("");
+        }
+        return;
+      }
+      paint(wa);
+      // Desktop often mounts WebApp before initData is filled — wait for it
+      if (wa.initData) {
         window.clearInterval(poll);
-        if (!done) finish(window.Telegram?.WebApp?.initData || "");
+        finish(wa.initData);
+        return;
+      }
+      if (Date.now() - started > 12000) {
+        window.clearInterval(poll);
+        finish(wa.initData || "");
       }
     }, 100);
 
-    // Hard stop so PC / blocked telegram.org CDN never spins forever
-    const hard = window.setTimeout(() => {
-      window.clearInterval(poll);
-      if (!done) finish(window.Telegram?.WebApp?.initData || "");
-    }, 3000);
-
-    return () => {
-      window.clearInterval(poll);
-      window.clearTimeout(hard);
-    };
+    return () => window.clearInterval(poll);
   }, [scriptReady, onReady]);
 
   return setScriptReady;
@@ -105,10 +102,21 @@ export default function TelegramMiniAppPage() {
   const isDemo = auth.status === "no_telegram";
 
   const authenticate = useCallback(async (initData: string) => {
+    // Never auto-load fake "Алексей" demo — that looked like a real traffer on PC
     if (!initData) {
-      setAuth({ status: "no_telegram" });
-      setCabinet(DEMO_CABINET);
-      setAdminData(DEMO_ADMIN as Record<string, unknown>);
+      const wantDemo =
+        typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("demo") === "1";
+      if (wantDemo) {
+        setAuth({ status: "no_telegram" });
+        setCabinet(DEMO_CABINET);
+        setAdminData(DEMO_ADMIN as Record<string, unknown>);
+        return;
+      }
+      setAuth({
+        status: "auth_error",
+        message: "Нет данных Telegram. Открой кабинет кнопкой в @rko_referal_bot",
+      });
       return;
     }
     try {
@@ -233,7 +241,6 @@ export default function TelegramMiniAppPage() {
 
   const showAdmin =
     isDemo || (auth.status === "ready" && auth.role === "ADMIN");
-  // Admin must NOT inherit traffer tabs (people/withdraw/ref)
   const isPartner =
     isDemo || (auth.status === "ready" && auth.role === "PARTNER");
   const isSubscriber =
@@ -242,7 +249,8 @@ export default function TelegramMiniAppPage() {
   const tabs = useMemo(() => {
     const list: AppTab[] = [];
     if (showAdmin) {
-      list.push("admin", "products", "premiums", "home");
+      // Full bar for admins; HomeTab itself is admin-safe (no fake traffer identity)
+      list.push("home", "products", "premiums", "people", "withdraw", "admin");
     } else if (isPartner) {
       list.push("home", "products", "people", "withdraw");
     } else if (isSubscriber) {
@@ -290,7 +298,7 @@ export default function TelegramMiniAppPage() {
             <div className="tg-spinner" />
             <p className="tg-muted text-sm mt-3">Загрузка кабинета…</p>
             <p className="tg-muted text-xs mt-2 text-center px-6">
-              Если долго — открой из бота @rko_referal_bot, не из браузера
+              Ждём Telegram… на ПК initData иногда приходит с задержкой
             </p>
           </div>
         ) : null}
