@@ -169,7 +169,10 @@ export default function TelegramMiniAppPage() {
   useEffect(() => {
     if (auth.status !== "ready") return;
     void loadCabinet();
-    if (auth.role === "ADMIN") void loadAdmin(adminSub);
+    if (auth.role === "ADMIN") {
+      setTab("admin");
+      void loadAdmin(adminSub);
+    }
   }, [auth, adminSub, loadCabinet, loadAdmin]);
 
   useEffect(() => {
@@ -230,19 +233,16 @@ export default function TelegramMiniAppPage() {
 
   const showAdmin =
     isDemo || (auth.status === "ready" && auth.role === "ADMIN");
+  // Admin must NOT inherit traffer tabs (people/withdraw/ref)
   const isPartner =
-    isDemo ||
-    (auth.status === "ready" &&
-      (auth.role === "PARTNER" || (auth.role === "ADMIN" && !cabinetForbidden)));
+    isDemo || (auth.status === "ready" && auth.role === "PARTNER");
   const isSubscriber =
     auth.status === "ready" && auth.role === "SUBSCRIBER";
 
   const tabs = useMemo(() => {
     const list: AppTab[] = [];
     if (showAdmin) {
-      list.push("home", "products", "premiums");
-      if (isPartner) list.push("people", "withdraw");
-      list.push("admin");
+      list.push("admin", "products", "premiums", "home");
     } else if (isPartner) {
       list.push("home", "products", "people", "withdraw");
     } else if (isSubscriber) {

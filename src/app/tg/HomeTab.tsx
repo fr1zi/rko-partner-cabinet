@@ -15,6 +15,7 @@ export function HomeTab({
 }) {
   const [copied, setCopied] = useState(false);
   const isSubscriber = role === "SUBSCRIBER";
+  const isAdmin = role === "ADMIN";
   const channelUrl = data.channelUrl || "https://t.me/w1nstr1k3";
 
   async function copyRef() {
@@ -25,6 +26,48 @@ export function HomeTab({
     } catch {
       /* ignore */
     }
+  }
+
+
+  if (isAdmin) {
+    return (
+      <div className="tg-stack">
+        <section className="tg-card">
+          <h2 className="tg-card-title">Кабинет админа</h2>
+          <p className="tg-muted text-sm mt-2 leading-relaxed">
+            Превью продуктов и вкладка «Админ»: итоги, цены, премии, заявки,
+            выводы и юзеры. Личная реф-ссылка и баланс траффера сюда не
+            подмешиваются.
+          </p>
+        </section>
+        <a
+          className="tg-btn-secondary w-full text-center"
+          href={channelUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Канал @w1nstr1k3
+        </a>
+        <section>
+          <h2 className="tg-section-label">Продукты (как у подписчика)</h2>
+          <div className="tg-stack">
+            {data.products.slice(0, 3).map((p) => (
+              <article key={p.id} className="tg-card tg-product">
+                <div className="tg-product-title-row">
+                  <p className="tg-card-title">{p.title}</p>
+                </div>
+                <div className="tg-money-plate">
+                  <span className="tg-money-plate-label">Цена</span>
+                  <span className="tg-money-plate-value">
+                    {money(p.subscriberPrice)}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
   }
 
   if (isSubscriber) {
