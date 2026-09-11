@@ -2,10 +2,10 @@ import { prisma } from "@/lib/prisma";
 import {
   sendMessage,
   sendToAdmins,
-  getChannelPublicUrl,
   editMessage,
   miniAppWebAppButton,
 } from "@/lib/telegram";
+import { getChannelJoinUrl } from "@/lib/bot/adminInvite";
 import { clearScene, setScene, parsePayload, getSession } from "@/lib/bot/session";
 import {
   clientMenu,
@@ -29,7 +29,7 @@ export async function showClientGreeting(
   editMsgId?: number
 ) {
   await ensureBotProducts();
-  const channel = getChannelPublicUrl();
+  const channel = await getChannelJoinUrl();
   const text =
     "👋 Добро пожаловать!\n\n" +
     "Канал для ИП и юрлиц по РКО и банковским продуктам.\n" +

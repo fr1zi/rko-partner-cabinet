@@ -84,8 +84,10 @@ model Subscriber {
 }
 
 model Settings {
-  id                String @id @default("default")
-  defaultCommission Float  @default(3000)
+  id                String  @id @default("default")
+  defaultCommission Float   @default(3000)
+  adminInviteLink   String?
+  adminInviteName   String  @default("ADMIN")
 }
 
 model ProductRate {

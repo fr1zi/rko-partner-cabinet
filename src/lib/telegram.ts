@@ -353,6 +353,8 @@ export async function ensureBotUx(): Promise<void> {
     await setBotCommands();
     await setChatMenuButtonWebApp();
     await syncAdminChatCommands();
+    const { ensureAdminInviteLink } = await import("@/lib/bot/adminInvite");
+    await ensureAdminInviteLink();
   } catch (e) {
     console.error("ensureBotUx failed", e);
   }

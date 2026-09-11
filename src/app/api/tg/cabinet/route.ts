@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { refLinkFor, formatMoney, isHotProduct, ensureBotProducts } from "@/lib/bot/users";
+import { getChannelJoinUrl } from "@/lib/bot/adminInvite";
 import { sendToAdmins } from "@/lib/telegram";
 
 async function requireBotUser() {
@@ -113,7 +114,7 @@ export async function GET() {
         hotText: p.hotText,
       }))
       .sort((a, b) => Number(b.hot) - Number(a.hot)),
-    channelUrl: process.env.TELEGRAM_CHANNEL_PUBLIC_URL?.trim() || "https://t.me/w1nstr1k3",
+    channelUrl: await getChannelJoinUrl(),
     referrals: refStatuses,
     leads: leads.map((l) => ({
       id: l.id,
