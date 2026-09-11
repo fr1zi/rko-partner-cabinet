@@ -260,7 +260,7 @@ export async function sendToAdmins(
       ...dbAdmins.map((a: { telegramId: string }) => a.telegramId),
     ])
   );
-  for (const id of ids) {
+  for (const id of Array.from(ids)) {
     try {
       await sendMessage(id, text, extra);
     } catch {
@@ -338,7 +338,7 @@ export async function setCommandsForUser(
 export async function syncAdminChatCommands(): Promise<void> {
   const { getChannelAdminTelegramIds } = await import("@/lib/bot/channelAdmins");
   const ids = await getChannelAdminTelegramIds(true);
-  for (const id of ids) {
+  for (const id of Array.from(ids)) {
     await setCommandsForUser(id, true);
   }
 }

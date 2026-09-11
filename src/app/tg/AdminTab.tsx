@@ -1,6 +1,6 @@
 "use client";
 
-import type { AdminSubTab, ProductForm } from "./types";
+import type { AdminSubTab } from "./types";
 import { money } from "./utils";
 
 const SUBS: Array<[AdminSubTab, string]> = [
@@ -16,8 +16,6 @@ export function AdminTab({
   tab,
   setTab,
   data,
-  productForm,
-  setProductForm,
   onAction,
   loading,
   disabled,
@@ -25,8 +23,6 @@ export function AdminTab({
   tab: AdminSubTab;
   setTab: (t: AdminSubTab) => void;
   data: Record<string, unknown> | null;
-  productForm: ProductForm;
-  setProductForm: (v: ProductForm) => void;
   onAction: (body: Record<string, unknown>) => Promise<void>;
   loading?: boolean;
   disabled?: boolean;
@@ -54,8 +50,6 @@ export function AdminTab({
         <AdminBody
           tab={tab}
           data={data}
-          productForm={productForm}
-          setProductForm={setProductForm}
           onAction={onAction}
           disabled={disabled}
         />
@@ -67,15 +61,11 @@ export function AdminTab({
 function AdminBody({
   tab,
   data,
-  productForm,
-  setProductForm,
   onAction,
   disabled,
 }: {
   tab: AdminSubTab;
   data: Record<string, unknown> | null;
-  productForm: ProductForm;
-  setProductForm: (v: ProductForm) => void;
   onAction: (body: Record<string, unknown>) => Promise<void>;
   disabled?: boolean;
 }) {

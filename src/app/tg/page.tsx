@@ -14,7 +14,6 @@ import type {
   AppTab,
   AuthState,
   CabinetData,
-  ProductForm,
   TgRole,
 } from "./types";
 import { WithdrawTab } from "./WithdrawTab";
@@ -70,16 +69,6 @@ export default function TelegramMiniAppPage() {
   const [wdAmount, setWdAmount] = useState("");
   const [wdDetails, setWdDetails] = useState("");
   const [msg, setMsg] = useState("");
-  const [productForm, setProductForm] = useState<ProductForm>({
-    title: "",
-    bank: "",
-    description: "",
-    reward: "3500",
-    subscriberPrice: "3500",
-    rewardType: "fixed",
-    url: "",
-  });
-
   const isDemo = auth.status === "no_telegram";
 
   const authenticate = useCallback(async (initData: string) => {
@@ -378,8 +367,6 @@ export default function TelegramMiniAppPage() {
                         ? (DEMO_ADMIN as Record<string, unknown>)
                         : adminData
                     }
-                    productForm={productForm}
-                    setProductForm={setProductForm}
                     onAction={adminAction}
                     loading={loading}
                     disabled={isDemo}

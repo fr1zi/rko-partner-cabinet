@@ -696,7 +696,7 @@ async function resolveTargetUser(query: string): Promise<{
   const uname = q.replace(/^@/, "").toLowerCase();
   const withAt = `@${uname}`;
 
-  let found = await prisma.botUser.findFirst({
+  const found = await prisma.botUser.findFirst({
     where: {
       OR: [
         { username: { equals: withAt } },

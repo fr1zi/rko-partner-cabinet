@@ -1,12 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { sendMessage, editMessage, miniAppWebAppButton } from "@/lib/telegram";
 import {
-  trafferMenu,
   backButton,
   PAGE_SIZE,
   paginateRow,
-  shortId,
-  withMarkup,
 } from "@/lib/bot/keyboards";
 import { clearScene, setScene, parsePayload, getSession } from "@/lib/bot/session";
 import {
