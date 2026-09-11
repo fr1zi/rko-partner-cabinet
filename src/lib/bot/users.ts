@@ -1,0 +1,250 @@
+import { prisma } from "@/lib/prisma";
+import { DEFAULT_PRODUCT_RATES } from "@/lib/productDefaults";
+import { isChannelAdmin } from "@/lib/bot/channelAdmins";
+
+export type TgFrom = {
+  id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+};
+
+/** Traffer ONLY when BotUser.role === "traffer" (admin assigns; never auto on /start). */
+export async function isTrafferBotUser(user: {
+  role: string;
+}): Promise<boolean> {
+  return user.role === "traffer";
+}
+
+export async function upsertBotUser(
+  from: TgFrom,
+  opts?: {
+    role?: string;
+    referrerId?: string | null;
+    bindReferrerIfEmpty?: boolean;
+    forceAdminCheck?: boolean;
+  }
+) {
+  const telegramId = String(from.id);
+  const username = from.username ? `@${from.username}` : null;
+  const firstName = from.first_name || null;
+  const existing = await prisma.botUser.findUnique({ where: { telegramId } });
+  const channelAdmin =
+    opts?.forceAdminCheck !== false
+      ? await isChannelAdmin(telegramId)
+      : false;
+
+  if (existing) {
+    const data: {
+      username: string | null;
+      firstName: string | null;
+      role?: string;
+      referrerId?: string;
+    } = { username, firstName };
+
+    if (channelAdmin || opts?.role === "admin") {
+      data.role = "admin";
+    } else if (opts?.role === "subscriber" || opts?.role === "client") {
+      // never downgrade admin/traffer via upsert — demote only via setBotUserRole
+      if (existing.role === "admin" || existing.role === "traffer") {
+        /* keep */
+      } else {
+        data.role = "subscriber";
+      }
+    }
+    // opts.role=traffer ignored here — promote only via admin setBotUserRole
+
+    if (
+      opts?.bindReferrerIfEmpty &&
+      opts.referrerId &&
+      !existing.referrerId &&
+      opts.referrerId !== existing.id
+    ) {
+      data.referrerId = opts.referrerId;
+    }
+
+    return prisma.botUser.update({ where: { id: existing.id }, data });
+  }
+
+  // Claim pending role assignment saved as pending:<username> before first /start
+  if (username) {
+    const bare = username.replace(/^@/, "").toLowerCase();
+    const pending = await prisma.botUser.findUnique({
+      where: { telegramId: `pending:${bare}` },
+    });
+    if (pending) {
+      let role = pending.role;
+      if (channelAdmin) role = "admin";
+      else if (opts?.role === "admin") role = "admin";
+      else if (role === "client") role = "subscriber";
+
+      let referrerId: string | undefined = pending.referrerId || undefined;
+      if (opts?.referrerId) {
+        const ref = await prisma.botUser.findFirst({
+          where: {
+            OR: [{ id: opts.referrerId }, { telegramId: opts.referrerId }],
+          },
+        });
+        if (ref && ref.telegramId !== telegramId) referrerId = ref.id;
+      }
+
+      return prisma.botUser.update({
+        where: { id: pending.id },
+        data: {
+          telegramId,
+          username,
+          firstName,
+          role,
+          referrerId,
+        },
+      });
+    }
+  }
+
+  // EVERY new user = subscriber (or admin if channel admin). Never auto-traffer.
+  let role = "subscriber";
+  if (channelAdmin) role = "admin";
+  else if (opts?.role === "admin") role = "admin";
+  else if (opts?.role === "traffer") role = "traffer";  // only explicit admin tooling
+  else if (opts?.role === "client") role = "subscriber";
+
+  let referrerId: string | undefined;
+  if (opts?.referrerId) {
+    const ref = await prisma.botUser.findFirst({
+      where: {
+        OR: [{ id: opts.referrerId }, { telegramId: opts.referrerId }],
+      },
+    });
+    if (ref && ref.telegramId !== telegramId) referrerId = ref.id;
+  }
+
+  return prisma.botUser.create({
+    data: {
+      telegramId,
+      username,
+      firstName,
+      role,
+      referrerId,
+    },
+  });
+}
+
+export async function findBotUserByTelegramId(telegramId: string) {
+  return prisma.botUser.findUnique({ where: { telegramId } });
+}
+
+export async function resolveProductShort(short: string) {
+  const all = await prisma.botProduct.findMany();
+  return all.find((p) => p.id.startsWith(short));
+}
+
+export async function resolveLeadShort(short: string) {
+  const all = await prisma.botLead.findMany({
+    where: { status: "new" },
+    take: 200,
+    orderBy: { createdAt: "desc" },
+  });
+  return all.find((l) => l.id.startsWith(short));
+}
+
+export async function resolveWithdrawalShort(short: string) {
+  const all = await prisma.withdrawal.findMany({
+    where: { status: { in: ["new", "approved"] } },
+    take: 200,
+    orderBy: { createdAt: "desc" },
+  });
+  return all.find((w) => w.id.startsWith(short));
+}
+
+export async function resolveUserShort(short: string) {
+  const all = await prisma.botUser.findMany({
+    take: 500,
+    orderBy: { createdAt: "desc" },
+  });
+  return all.find((u) => u.id.startsWith(short));
+}
+
+const TITLE_BY_KEY: Record<string, string> = {
+  rko: "РКО (открытие счёта)",
+  debit_card: "Дебетовая карта",
+  credit_card: "Кредитная карта",
+  acquiring: "Эквайринг",
+  salary_project: "Зарплатный проект",
+  deposit: "Депозит для бизнеса",
+};
+
+let productsEnsured = false;
+
+export async function ensureBotProducts(): Promise<void> {
+  if (productsEnsured) return;
+  try {
+  for (const r of DEFAULT_PRODUCT_RATES) {
+    const title = TITLE_BY_KEY[r.productKey] || r.productName;
+    const existing = await prisma.botProduct.findFirst({ where: { title } });
+    if (existing) {
+      const subscriberPrice =
+        existing.subscriberPrice && existing.subscriberPrice > 0
+          ? existing.subscriberPrice
+          : existing.reward || r.premium;
+      await prisma.botProduct.update({
+        where: { id: existing.id },
+        data: {
+          reward: r.premium,
+          subscriberPrice,
+          rewardType: "fixed",
+          isActive: true,
+        },
+      });
+    } else {
+      await prisma.botProduct.create({
+        data: {
+          title,
+          bank: "",
+          description: r.productName,
+          reward: r.premium,
+          subscriberPrice: r.premium,
+          rewardType: "fixed",
+          url: "",
+          isActive: true,
+        },
+      });
+    }
+  }
+  // Backfill any products with subscriberPrice 0 from reward
+  const zeroPrice = await prisma.botProduct.findMany({
+    where: { subscriberPrice: 0 },
+  });
+  for (const p of zeroPrice) {
+    if (p.reward > 0) {
+      await prisma.botProduct.update({
+        where: { id: p.id },
+        data: { subscriberPrice: p.reward },
+      });
+    }
+  }
+  productsEnsured = true;
+  } catch (e) {
+    productsEnsured = false;
+    throw e;
+  }
+}
+
+export function formatMoney(n: number): string {
+  return `${Math.round(n).toLocaleString("ru-RU")} ₽`;
+}
+
+export function isHotProduct(p: {
+  isHot: boolean;
+  hotUntil: Date | null;
+}): boolean {
+  if (!p.isHot) return false;
+  if (!p.hotUntil) return true;
+  return p.hotUntil.getTime() > Date.now();
+}
+
+export function refLinkFor(telegramId: string): string {
+  const bot =
+    process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "").trim() ||
+    "rko_referal_bot";
+  return `https://t.me/${bot}?start=ref_${telegramId}`;
+}

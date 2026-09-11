@@ -1,0 +1,171 @@
+import type { CabinetData } from "./types";
+
+/** Clearly marked placeholder data for browser preview without Telegram. */
+export const DEMO_CABINET: CabinetData = {
+  botUser: {
+    id: "demo-user",
+    telegramId: "000000000",
+    username: "demo_partner",
+    firstName: "Алексей",
+    balance: 128_500,
+    role: "traffer",
+  },
+  refLink: "https://t.me/rko_referal_bot?start=ref_000000000",
+  channelUrl: "https://t.me/w1nstr1k3",
+  stats: {
+    clicks: 842,
+    registrations: 56,
+    leadsTotal: 23,
+    approved: 14,
+    rejected: 3,
+    credited: 49_000,
+    creditedLabel: "49 000 ₽",
+  },
+  products: [
+    {
+      id: "demo-p1",
+      title: "РКО для ИП",
+      bank: "Тинькофф Бизнес",
+      description: "Открытие счёта для ИП, 18+",
+      reward: 3500,
+      subscriberPrice: 3500,
+      rewardType: "fixed",
+      hot: true,
+      hotText: "Повышенная ставка до конца месяца",
+    },
+    {
+      id: "demo-p2",
+      title: "РКО для ООО",
+      bank: "СберБизнес",
+      description: "Расчётный счёт для юрлиц",
+      reward: 5000,
+      subscriberPrice: 5000,
+      rewardType: "fixed",
+      hot: false,
+      hotText: null,
+    },
+    {
+      id: "demo-p3",
+      title: "Эквайринг",
+      bank: "Альфа-Банк",
+      description: "Торговый эквайринг",
+      reward: 2500,
+      subscriberPrice: 2500,
+      rewardType: "fixed",
+      hot: false,
+      hotText: null,
+    },
+  ],
+  referrals: [
+    {
+      id: "demo-r1",
+      username: "ivan_ip",
+      firstName: "Иван",
+      telegramId: "111",
+      status: "approved",
+    },
+    {
+      id: "demo-r2",
+      username: null,
+      firstName: "Мария",
+      telegramId: "222",
+      status: "pending",
+    },
+    {
+      id: "demo-r3",
+      username: "ooo_start",
+      firstName: "Олег",
+      telegramId: "333",
+      status: "none",
+    },
+  ],
+  withdrawals: [
+    {
+      id: "demo-w1",
+      amount: 15000,
+      details: "Карта ···· 4242",
+      status: "paid",
+      createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
+    },
+    {
+      id: "demo-w2",
+      amount: 8000,
+      details: "СБП +79001234567",
+      status: "new",
+      createdAt: new Date(Date.now() - 1 * 86400000).toISOString(),
+    },
+  ],
+  txs: [
+    {
+      id: "demo-t1",
+      amount: 3500,
+      type: "credit_lead",
+      comment: "Одобрение РКО для ИП",
+      createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+    },
+    {
+      id: "demo-t2",
+      amount: -8000,
+      type: "debit_withdraw",
+      comment: "hold вывода",
+      createdAt: new Date(Date.now() - 1 * 86400000).toISOString(),
+    },
+  ],
+};
+
+export const DEMO_ADMIN = {
+  stats: {
+    traffers: 128,
+    clients: 940,
+    leads: 312,
+    credited: 1_240_000,
+    creditedLabel: "1 240 000 ₽",
+  },
+  products: [
+    {
+      id: "demo-ap1",
+      title: "РКО для ИП",
+      reward: 3500,
+      subscriberPrice: 3500,
+      isActive: true,
+      isHot: true,
+    },
+    {
+      id: "demo-ap2",
+      title: "РКО для ООО",
+      reward: 5000,
+      subscriberPrice: 5000,
+      isActive: true,
+      isHot: false,
+    },
+  ],
+  leads: [
+    {
+      id: "demo-al1",
+      status: "new",
+      fullName: "Пётр Сидоров",
+      phone: "+7 900 111-22-33",
+      product: { title: "РКО для ИП" },
+      client: { username: "petr_s", telegramId: "444" },
+    },
+  ],
+  withdrawals: [
+    {
+      id: "demo-aw1",
+      amount: 12000,
+      status: "new",
+      details: "СБП +79005551234",
+      user: { username: "demo_partner", telegramId: "000" },
+    },
+  ],
+  users: [
+    {
+      id: "demo-au1",
+      username: "demo_partner",
+      telegramId: "000000000",
+      role: "traffer",
+      balance: 128500,
+      isBanned: false,
+    },
+  ],
+};

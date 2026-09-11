@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         String   // ADMIN | PARTNER
+  name         String?
+  createdAt    DateTime @default(now())
+  partner      Partner?
+}
+
+model Partner {
+  id                     String         @id @default(cuid())
+  userId                 String         @unique
+  user                   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refCode                String         @unique
+  displayName            String?
+  telegramChannelUrl     String?
+  telegramUsername       String?
+  telegramId             String?        @unique
+  telegramInviteLink     String?
+  telegramInviteLinkName String?
+  defaultCommission      Float          @default(3000)
+  active                 Boolean        @default(true)
+  createdAt              DateTime       @default(now())
+  clients                Client[]
+  telegramUsers          TelegramUser[]
+  subscribers            Subscriber[]
+}
+
+model Client {
+  id               String   @id @default(cuid())
+  partnerId        String
+  partner          Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  name             String
+  phone            String
+  inn              String?
+  comment          String?
+  product          String   @default("РКО (открытие счёта)")
+  amount           Float?
+  status           String   @default("new") // new|application|approved|issued|paid|rejected
+  commission       Float?
+  commissionStatus String   @default("pending") // pending|paid
+  telegramId       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model TelegramUser {
+  id         String   @id @default(cuid())
+  telegramId String   @unique
+  username   String?
+  firstName  String?
+  lastName   String?
+  partnerId  String?
+  partner    Partner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  refCode    String?
+  joinedAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+/// Channel join attributed via unique invite link per traffer
+model Subscriber {
+  id             String   @id @default(cuid())
+  telegramId     String   @unique
+  username       String?
+  partnerId      String?
+  partner        Partner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  inviteLink     String?
+  inviteLinkName String?
+  joinedAt       DateTime @default(now())
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Settings {
+  id                String @id @default("default")
+  defaultCommission Float  @default(3000)
+}
+
+model ProductRate {
+  id          String   @id @default(cuid())
+  productKey  String   @unique
+  productName String
+  premium     Float
+  sortOrder   Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BotUser {
+  id          String   @id @default(cuid())
+  telegramId  String   @unique
+  username    String?
+  firstName   String?
+  role        String   @default("subscriber")
+  referrerId  String?
+  referrer    BotUser?  @relation("BotRefs", fields: [referrerId], references: [id], onDelete: SetNull)
+  referrals   BotUser[] @relation("BotRefs")
+  balance     Float    @default(0)
+  isBanned    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  leadsAsClient BotLead[] @relation("LeadClient")
+  leadsAsRef    BotLead[] @relation("LeadRef")
+  txs         LedgerTx[]
+  withdrawals Withdrawal[]
+  clicksAsRef ReferralClick[] @relation("ClickRef")
+}
+
+model BotProduct {
+  id              String   @id @default(cuid())
+  title           String
+  bank            String   @default("")
+  description     String   @default("")
+  reward          Float
+  subscriberPrice Float    @default(0)
+  rewardType      String   @default("fixed")
+  url             String   @default("")
+  isActive    Boolean  @default(true)
+  isHot       Boolean  @default(false)
+  hotText     String?
+  hotUntil    DateTime?
+  createdAt   DateTime @default(now())
+  leads       BotLead[]
+}
+
+model BotLead {
+  id            String   @id @default(cuid())
+  clientId      String
+  client        BotUser  @relation("LeadClient", fields: [clientId], references: [id])
+  referrerId    String?
+  referrer      BotUser? @relation("LeadRef", fields: [referrerId], references: [id])
+  productId     String
+  product       BotProduct @relation(fields: [productId], references: [id])
+  fullName      String   @default("")
+  phone         String   @default("")
+  status        String   @default("new")
+  adminComment  String?
+  createdAt     DateTime @default(now())
+  approvedAt    DateTime?
+  txs           LedgerTx[]
+
+  @@index([clientId, productId])
+}
+
+model LedgerTx {
+  id        String   @id @default(cuid())
+  userId    String
+  user      BotUser  @relation(fields: [userId], references: [id])
+  amount    Float
+  type      String
+  leadId    String?
+  lead      BotLead? @relation(fields: [leadId], references: [id])
+  comment   String?
+  createdAt DateTime @default(now())
+}
+
+model Withdrawal {
+  id        String   @id @default(cuid())
+  userId    String
+  user      BotUser  @relation(fields: [userId], references: [id])
+  amount    Float
+  details   String
+  status    String   @default("new")
+  createdAt DateTime @default(now())
+}
+
+model ReferralClick {
+  id                String   @id @default(cuid())
+  referrerId        String
+  referrer          BotUser  @relation("ClickRef", fields: [referrerId], references: [id])
+  clientTelegramId  String
+  createdAt         DateTime @default(now())
+}
+
+model BotSession {
+  telegramId String @id
+  scene      String @default("idle")
+  payload    String @default("{}")
+  updatedAt  DateTime @updatedAt
+}
