@@ -18,6 +18,8 @@ import {
 } from "@/lib/productDefaults";
 import type { AdminSubTab } from "./types";
 import { LeaderboardList } from "./Leaderboard";
+import { askReason, ReasonPromptHost } from "./ReasonPrompt";
+import { AUDIT_ACTION_LABELS } from "@/lib/bot/adminAuditLabels";
 import { formatOrderNumber, orderIdMatchesQuery } from "@/lib/orderNumber";
 import {
   formatDate,
@@ -37,6 +39,7 @@ const SUBS: Array<[AdminSubTab, string]> = [
   ["leads", "Заказы"],
   ["withdrawals", "Выводы"],
   ["users", "Юзеры"],
+  ["journal", "Журнал"],
 ];
 
 export function AdminTab({
@@ -56,6 +59,7 @@ export function AdminTab({
 }) {
   return (
     <div className="tg-stack">
+      <ReasonPromptHost />
       <div className="tg-admin-chips">
         {SUBS.map(([key, label]) => (
           <button
@@ -217,6 +221,18 @@ function AdminBody({
       />
     );
   }
+  if (tab === "journal") {
+    return (
+      <AdminJournalPanel
+        entries={(data.journal || []) as AdminJournalEntry[]}
+        actionLabels={
+          (data.actionLabels as Record<string, string> | undefined) ||
+          AUDIT_ACTION_LABELS
+        }
+      />
+    );
+  }
+
 
   return null;
 }
@@ -1154,13 +1170,19 @@ function AdminLeadLineControls({
           className="tg-btn-secondary text-xs"
           disabled={disabled || st === "rejected"}
           onClick={() => {
-            const comment = prompt("Почему не прошло") || "не прошло";
-            void onAction({
-              action: "lead_set_status",
-              id: l.id,
-              status: "rejected",
-              comment,
-            });
+            void (async () => {
+              const comment = await askReason({
+                title: "Почему не прошло",
+                placeholder: "Причина отказа",
+              });
+              if (!comment) return;
+              await onAction({
+                action: "lead_set_status",
+                id: l.id,
+                status: "rejected",
+                comment,
+              });
+            })();
           }}
         >
           Не прошло
@@ -1170,18 +1192,21 @@ function AdminLeadLineControls({
           className="tg-btn-secondary text-xs"
           disabled={disabled || st === "rejected"}
           onClick={() => {
-            const reason = String(
-              prompt("Причина удаления из чека (обязательно)") || ""
-            ).trim();
-            if (!reason) {
-              alert("Нужна причина — удаление отменено");
-              return;
-            }
-            void onAction({
-              action: "remove_order_line",
-              leadId: l.id,
-              reason,
-            });
+            void (async () => {
+              const reason = await askReason({
+                title: "Причина удаления из чека",
+                placeholder: "Почему удаляем позицию",
+              });
+              if (!reason) {
+                alert("Нужна причина — удаление отменено");
+                return;
+              }
+              await onAction({
+                action: "remove_order_line",
+                leadId: l.id,
+                reason,
+              });
+            })();
           }}
         >
           Удалить из чека
@@ -1192,18 +1217,21 @@ function AdminLeadLineControls({
             className="tg-btn-primary text-xs"
             disabled={disabled || st !== "rejected"}
             onClick={() => {
-              const note = String(
-                prompt("Заметка: почему вернули в заказ (обязательно)") || ""
-              ).trim();
-              if (!note) {
-                alert("Нужна заметка — возврат отменён");
-                return;
-              }
-              void onAction({
-                action: "restore_order_line",
-                leadId: l.id,
-                note,
-              });
+              void (async () => {
+                const note = await askReason({
+                  title: "Почему вернули в заказ",
+                  placeholder: "Заметка о возврате",
+                });
+                if (!note) {
+                  alert("Нужна заметка — возврат отменён");
+                  return;
+                }
+                await onAction({
+                  action: "restore_order_line",
+                  leadId: l.id,
+                  note,
+                });
+              })();
             }}
           >
             Вернуть в заказ
@@ -1542,7 +1570,11 @@ function AdminLeadsPanel({
     if (selectedIds.length === 0 || disabled || bulkBusy) return;
     let comment: string | undefined;
     if (status === "rejected") {
-      comment = String(prompt("Причина отказа") || "").trim();
+      comment =
+        (await askReason({
+          title: "Причина отказа",
+          placeholder: "Почему отклоняем",
+        })) || undefined;
       if (!comment) {
         alert("Нужна причина");
         return;
@@ -1862,20 +1894,21 @@ function AdminLeadsPanel({
                                 className="tg-btn-primary text-xs shrink-0"
                                 disabled={disabled}
                                 onClick={() => {
-                                  const note = String(
-                                    prompt(
-                                      "Заметка: почему вернули в чек (обязательно)"
-                                    ) || ""
-                                  ).trim();
-                                  if (!note) {
-                                    alert("Нужна заметка — возврат отменён");
-                                    return;
-                                  }
-                                  void onAction({
-                                    action: "restore_order_line",
-                                    leadId: l.id,
-                                    note,
-                                  });
+                                  void (async () => {
+                                    const note = await askReason({
+                                      title: "Почему вернули в чек",
+                                      placeholder: "Заметка о возврате",
+                                    });
+                                    if (!note) {
+                                      alert("Нужна заметка — возврат отменён");
+                                      return;
+                                    }
+                                    await onAction({
+                                      action: "restore_order_line",
+                                      leadId: l.id,
+                                      note,
+                                    });
+                                  })();
                                 }}
                               >
                                 Вернуть
@@ -2009,18 +2042,21 @@ function AdminWithdrawalsPanel({
                   className="tg-btn-secondary text-xs"
                   disabled={disabled}
                   onClick={() => {
-                    const reason = String(
-                      prompt("Причина отклонения вывода (обязательно)") || ""
-                    ).trim();
-                    if (!reason) {
-                      alert("Нужна причина");
-                      return;
-                    }
-                    void onAction({
-                      action: "wd_reject",
-                      id: w.id,
-                      reason,
-                    });
+                    void (async () => {
+                      const reason = await askReason({
+                        title: "Причина отклонения вывода",
+                        placeholder: "Почему отклоняем вывод",
+                      });
+                      if (!reason) {
+                        alert("Нужна причина");
+                        return;
+                      }
+                      await onAction({
+                        action: "wd_reject",
+                        id: w.id,
+                        reason,
+                      });
+                    })();
                   }}
                 >
                   Отклонить
@@ -2573,3 +2609,112 @@ function AdminOffersPanel({
   );
 }
 
+
+type AdminJournalEntry = {
+  id: string;
+  createdAt: string;
+  actorTelegramId: string;
+  actorUsername?: string | null;
+  action: string;
+  targetSummary: string;
+  note?: string | null;
+  metadata?: unknown;
+};
+
+function AdminJournalPanel({
+  entries,
+  actionLabels,
+}: {
+  entries: AdminJournalEntry[];
+  actionLabels: Record<string, string>;
+}) {
+  const [q, setQ] = useState("");
+  const [actionFilter, setActionFilter] = useState<string>("all");
+
+  const actionOptions = useMemo(() => {
+    const keys = new Set<string>();
+    for (const e of entries) keys.add(e.action);
+    for (const k of Object.keys(actionLabels)) keys.add(k);
+    return Array.from(keys).sort();
+  }, [entries, actionLabels]);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return entries.filter((e) => {
+      if (actionFilter !== "all" && e.action !== actionFilter) return false;
+      if (!needle) return true;
+      const hay = [
+        e.targetSummary,
+        e.note || "",
+        e.actorUsername || "",
+        e.actorTelegramId,
+        actionLabels[e.action] || e.action,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(needle);
+    });
+  }, [entries, q, actionFilter, actionLabels]);
+
+  return (
+    <div className="tg-stack">
+      <p className="tg-note-plate">
+        Журнал действий админов. Новые сверху. Фильтр по типу и поиск по тексту.
+      </p>
+      <input
+        className="tg-input"
+        placeholder="Поиск: цель, причина, @админ…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+      <div className="tg-admin-chips">
+        <button
+          type="button"
+          className={
+            actionFilter === "all" ? "tg-chip tg-chip-active" : "tg-chip"
+          }
+          onClick={() => setActionFilter("all")}
+        >
+          Все
+        </button>
+        {actionOptions.map((a) => (
+          <button
+            key={a}
+            type="button"
+            className={
+              actionFilter === a ? "tg-chip tg-chip-active" : "tg-chip"
+            }
+            onClick={() => setActionFilter(a)}
+          >
+            {actionLabels[a] || a}
+          </button>
+        ))}
+      </div>
+      {filtered.length === 0 ? (
+        <div className="tg-empty">Пока нет записей</div>
+      ) : (
+        filtered.map((e) => (
+          <div key={e.id} className="tg-card space-y-1.5">
+            <div className="flex items-start justify-between gap-2">
+              <p className="tg-card-title text-sm">
+                {actionLabels[e.action] || e.action}
+              </p>
+              <p className="tg-muted text-xs shrink-0">
+                {formatDate(e.createdAt)}
+              </p>
+            </div>
+            <p className="text-sm">{e.targetSummary}</p>
+            {e.note ? (
+              <p className="tg-muted text-xs">Причина: {e.note}</p>
+            ) : null}
+            <p className="tg-muted text-xs">
+              {e.actorUsername
+                ? `@${String(e.actorUsername).replace(/^@/, "")}`
+                : `tg:${e.actorTelegramId}`}
+            </p>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}

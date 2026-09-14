@@ -198,6 +198,8 @@ export const DEMO_ADMIN = {
       user: { username: "demo_partner", telegramId: "000" },
     },
   ],
+  journal: [],
+  actionLabels: {},
   users: [
     {
       id: "demo-au1",

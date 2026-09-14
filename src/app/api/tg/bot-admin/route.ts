@@ -35,6 +35,15 @@ import {
 } from "@/lib/bot/orders";
 import { ensureHoldColumn } from "@/lib/bot/leads";
 import { buildAndSendDailyDigest } from "@/lib/bot/dailyDigest";
+import {
+  ensureAdminAuditLogTable,
+  writeAdminAudit,
+  leadTargetSummary,
+  userTargetSummary,
+  productTargetSummary,
+  statusRu,
+  AUDIT_ACTION_LABELS,
+} from "@/lib/bot/adminAudit";
 
 
 async function ensureWithdrawalColumns() {
@@ -96,6 +105,18 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json({ withdrawals });
   }
+  if (tab === "journal") {
+    await ensureAdminAuditLogTable();
+    const entries = await prisma.adminAuditLog.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    return NextResponse.json({
+      journal: entries,
+      actionLabels: AUDIT_ACTION_LABELS,
+    });
+  }
+
   if (tab === "tax_docx") {
     const monthParam =
       req.nextUrl.searchParams.get("month") || currentYearMonth();
@@ -305,6 +326,13 @@ export async function POST(req: NextRequest) {
     if (isHot) {
       broadcast = await broadcastHotOffer(p);
     }
+    await writeAdminAudit({
+      session,
+      action: "product_create",
+      targetSummary: productTargetSummary(p),
+      note: isHot ? "создан с HOT" : null,
+      metadata: { productId: p.id, isHot, bank: p.bank, title: p.title },
+    });
     return NextResponse.json({ ok: true, product: p, broadcast });
   }
 
@@ -347,6 +375,13 @@ export async function POST(req: NextRequest) {
         where: { id },
         data: { isActive: false },
       });
+      await writeAdminAudit({
+        session,
+        action: "product_delete",
+        targetSummary: productTargetSummary(pr),
+        note: "soft: выключен (есть заявки)",
+        metadata: { productId: id, softDeleted: true },
+      });
       return NextResponse.json({
         ok: true,
         softDeleted: true,
@@ -355,6 +390,12 @@ export async function POST(req: NextRequest) {
       });
     }
     await prisma.botProduct.delete({ where: { id } });
+    await writeAdminAudit({
+      session,
+      action: "product_delete",
+      targetSummary: productTargetSummary(pr),
+      metadata: { productId: id, deleted: true },
+    });
     return NextResponse.json({ ok: true, deleted: true });
   }
 
@@ -379,6 +420,17 @@ export async function POST(req: NextRequest) {
     if (turningOn && !prev.isHot) {
       broadcast = await broadcastHotOffer(updated);
     }
+    await writeAdminAudit({
+      session,
+      action: "product_hot",
+      targetSummary: `${productTargetSummary(updated)} · HOT ${turningOn ? "вкл" : "выкл"}`,
+      metadata: {
+        productId: id,
+        isHot: turningOn,
+        days: days || null,
+        previouslyHot: prev.isHot,
+      },
+    });
     return NextResponse.json({ ok: true, product: updated, broadcast });
   }
 
@@ -396,6 +448,10 @@ export async function POST(req: NextRequest) {
       amountRaw === undefined || amountRaw === ""
         ? undefined
         : Number(amountRaw);
+    const leadBefore = await prisma.botLead.findUnique({
+      where: { id },
+      include: { client: true, product: true },
+    });
     const result = await setLeadStatus({
       leadId: id,
       status,
@@ -405,6 +461,20 @@ export async function POST(req: NextRequest) {
     if ("error" in result) {
       const code = result.error === "not found" ? 404 : 400;
       return NextResponse.json({ error: result.error }, { status: code });
+    }
+    if (leadBefore) {
+      await writeAdminAudit({
+        session,
+        action: "lead_status_change",
+        targetSummary: `${leadTargetSummary(leadBefore)} → ${statusRu(status)}`,
+        note: body.comment ? String(body.comment) : null,
+        metadata: {
+          leadId: id,
+          from: leadBefore.status,
+          to: status,
+          orderId: leadBefore.orderId,
+        },
+      });
     }
     return NextResponse.json({ ok: true });
   }
@@ -442,6 +512,15 @@ export async function POST(req: NextRequest) {
         updated += 1;
       }
     }
+    if (updated > 0) {
+      await writeAdminAudit({
+        session,
+        action: "leads_bulk_status",
+        targetSummary: `Массово → ${statusRu(status)} · ${updated} шт.`,
+        note: comment || null,
+        metadata: { leadIds, status, updated, errors },
+      });
+    }
     return NextResponse.json({ ok: true, updated, errors });
   }
 
@@ -457,11 +536,27 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    const leadBefore = await prisma.botLead.findUnique({
+      where: { id: leadId },
+      include: { client: true, product: true },
+    });
     const result = await removeOrderLine({ leadId, reason });
     if ("error" in result) {
       const code = result.error === "not found" ? 404 : 400;
       return NextResponse.json({ error: result.error }, { status: code });
     }
+    await writeAdminAudit({
+      session,
+      action: "remove_order_line",
+      targetSummary: leadBefore
+        ? leadTargetSummary(leadBefore)
+        : `lead ${leadId}`,
+      note: reason,
+      metadata: {
+        leadId,
+        orderId: leadBefore?.orderId ?? null,
+      },
+    });
     return NextResponse.json({ ok: true });
   }
 
@@ -474,11 +569,27 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    const leadBefore = await prisma.botLead.findUnique({
+      where: { id: leadId },
+      include: { client: true, product: true },
+    });
     const result = await restoreOrderLine({ leadId, note });
     if ("error" in result) {
       const code = result.error === "not found" ? 404 : 400;
       return NextResponse.json({ error: result.error }, { status: code });
     }
+    await writeAdminAudit({
+      session,
+      action: "restore_order_line",
+      targetSummary: leadBefore
+        ? leadTargetSummary(leadBefore)
+        : `lead ${leadId}`,
+      note,
+      metadata: {
+        leadId,
+        orderId: leadBefore?.orderId ?? null,
+      },
+    });
     return NextResponse.json({ ok: true });
   }
 
@@ -537,6 +648,13 @@ export async function POST(req: NextRequest) {
         full.user.telegramId,
         `❌ Вывод отклонён: ${reason}`
       );
+      await writeAdminAudit({
+        session,
+        action: "wd_reject",
+        targetSummary: `Вывод ${formatMoney(full.amount)} · ${userTargetSummary(full.user)}`,
+        note: reason,
+        metadata: { withdrawalId: id, amount: full.amount, userId: full.userId },
+      });
     } else {
       await prisma.withdrawal.update({
         where: { id },
@@ -592,6 +710,18 @@ export async function POST(req: NextRequest) {
     } catch {
       /* blocked / unreachable */
     }
+    await writeAdminAudit({
+      session,
+      action: "set_balance",
+      targetSummary: `${userTargetSummary(u)} → ${formatMoney(balance)}`,
+      note: body.comment ? String(body.comment) : null,
+      metadata: {
+        userId,
+        from: u.balance,
+        to: balance,
+        delta,
+      },
+    });
     return NextResponse.json({ ok: true, balance });
   }
 
@@ -628,6 +758,17 @@ export async function POST(req: NextRequest) {
     } catch {
       /* blocked */
     }
+    await writeAdminAudit({
+      session,
+      action: "user_adjust",
+      targetSummary: `${userTargetSummary(u)} · Δ ${formatMoney(amount)}`,
+      note: body.comment ? String(body.comment) : null,
+      metadata: {
+        userId: id,
+        amount,
+        balanceAfter: fresh?.balance ?? null,
+      },
+    });
     return NextResponse.json({ ok: true });
   }
 

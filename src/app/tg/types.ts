@@ -116,7 +116,8 @@ export type AdminSubTab =
   | "offers"
   | "leads"
   | "withdrawals"
-  | "users";
+  | "users"
+  | "journal";
 export type AppTab = PartnerTab | "admin";
 
 export type ProductForm = {

@@ -210,3 +210,19 @@ model BotSession {
   payload    String @default("{}")
   updatedAt  DateTime @updatedAt
 }
+
+/// Admin action audit trail (Mini App / bot-admin)
+model AdminAuditLog {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  actorTelegramId String
+  actorUsername   String?
+  action          String
+  targetSummary   String
+  note            String?
+  metadata        Json?
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([actorTelegramId])
+}

@@ -1182,3 +1182,57 @@ body {
 .tg-funnel-block strong {
   font-variant-numeric: tabular-nums;
 }
+
+/* Reason prompt modal (admin mandatory reasons) */
+.tg-reason-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px 12px calc(16px + var(--tg-safe-bottom, 0px));
+  background: rgba(2, 6, 14, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.tg-reason-modal {
+  width: 100%;
+  max-width: 420px;
+  background: var(--tg-card-raised);
+  border: 1px solid var(--tg-line);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+.tg-reason-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tg-reason-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--muted);
+  background: var(--tg-card);
+  border: 1px solid var(--tg-line);
+}
+.tg-reason-chip-active {
+  color: #041018;
+  background: var(--accent);
+  border-color: transparent;
+}
+.tg-reason-textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  font-family: inherit;
+}
