@@ -166,6 +166,7 @@ model BotLead {
   /// Subscriber chose to wait until all lines in the чек are ready before credit
   holdUntilOrderComplete Boolean @default(false)
   createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
   approvedAt        DateTime?
   txs               LedgerTx[]
 

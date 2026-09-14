@@ -114,7 +114,7 @@ function AdminBody({
           disabled={disabled}
           onClick={() => void onAction({ action: "send_daily_digest" })}
         >
-          Дайджест сейчас
+          Дашборд сейчас
         </button>
         <TaxReportPanel
           initial={(data.taxReport || null) as TaxReportState | null}

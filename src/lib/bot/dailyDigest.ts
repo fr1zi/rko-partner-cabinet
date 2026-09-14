@@ -36,12 +36,17 @@ export function moscowDayBounds(offsetDays = 0): {
 
 export type DailyDigestSummary = {
   date: string;
+  timeLabel: string;
   newLeads: number;
+  paidOrAwaiting: number;
+  rejectedToday: number;
   newWithdrawals: number;
   pendingWithdrawals: number;
   companyProfit: number;
   companyProfitLabel: string;
   openProcessing: number;
+  yesterdayLeads: number;
+  yesterdayProfitLabel: string;
   sent: boolean;
 };
 
@@ -88,42 +93,93 @@ async function companyProfitForRange(
   return profit;
 }
 
+/** Live day dashboard for admins — today so far (MSK) + yesterday snapshot. */
 export async function buildAndSendDailyDigest(): Promise<DailyDigestSummary> {
   await ensureHoldColumn();
-  const { start, end, ymd } = moscowDayBounds(-1);
+  const today = moscowDayBounds(0);
+  const yesterday = moscowDayBounds(-1);
+  const timeLabel = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date());
 
-  const [newLeads, newWithdrawals, pendingWithdrawals, openProcessing, profit] =
-    await Promise.all([
-      prisma.botLead.count({
-        where: { createdAt: { gte: start, lt: end } },
-      }),
-      prisma.withdrawal.count({
-        where: { createdAt: { gte: start, lt: end } },
-      }),
-      prisma.withdrawal.count({ where: { status: "new" } }),
-      prisma.botLead.count({ where: { status: "processing" } }),
-      companyProfitForRange(start, end),
-    ]);
+  const [
+    newLeads,
+    paidOrAwaiting,
+    rejectedToday,
+    newWithdrawals,
+    pendingWithdrawals,
+    openProcessing,
+    profitToday,
+    yesterdayLeads,
+    profitYesterday,
+  ] = await Promise.all([
+    prisma.botLead.count({
+      where: { createdAt: { gte: today.start, lt: today.end } },
+    }),
+    prisma.botLead.count({
+      where: {
+        status: { in: ["paid", "awaiting_payout"] },
+        OR: [
+          { approvedAt: { gte: today.start, lt: today.end } },
+          {
+            AND: [
+              { approvedAt: null },
+              { createdAt: { gte: today.start, lt: today.end } },
+            ],
+          },
+        ],
+      },
+    }),
+    prisma.botLead.count({
+      where: {
+        status: "rejected",
+        updatedAt: { gte: today.start, lt: today.end },
+      },
+    }),
+    prisma.withdrawal.count({
+      where: { createdAt: { gte: today.start, lt: today.end } },
+    }),
+    prisma.withdrawal.count({ where: { status: "new" } }),
+    prisma.botLead.count({ where: { status: "processing" } }),
+    companyProfitForRange(today.start, today.end),
+    prisma.botLead.count({
+      where: { createdAt: { gte: yesterday.start, lt: yesterday.end } },
+    }),
+    companyProfitForRange(yesterday.start, yesterday.end),
+  ]);
 
-  const companyProfitLabel = formatMoney(profit);
+  const companyProfitLabel = formatMoney(profitToday);
+  const yesterdayProfitLabel = formatMoney(profitYesterday);
   const text =
-    `☀️ <b>Утренний дайджест</b> · ${ymd} (МСК)\n\n` +
-    `📥 Новых заявок: <b>${newLeads}</b>\n` +
-    `💸 Выводов вчера: <b>${newWithdrawals}</b>\n` +
-    `⏳ Выводов в ожидании: <b>${pendingWithdrawals}</b>\n` +
-    `💰 Прибыль компании: <b>${companyProfitLabel}</b>\n` +
-    `🔄 В обработке: <b>${openProcessing}</b>`;
+    `📊 <b>Дашборд дня</b> · ${today.ymd} · ${timeLabel} МСК\n\n` +
+    `<b>Сегодня на сейчас</b>\n` +
+    `📥 Новых позиций: <b>${newLeads}</b>\n` +
+    `✅ Одобрено / к выплате: <b>${paidOrAwaiting}</b>\n` +
+    `❌ Отказов: <b>${rejectedToday}</b>\n` +
+    `💸 Заявок на вывод: <b>${newWithdrawals}</b>\n` +
+    `⏳ Выводы в очереди: <b>${pendingWithdrawals}</b>\n` +
+    `🔄 В обработке всего: <b>${openProcessing}</b>\n` +
+    `💰 Прибыль сегодня: <b>${companyProfitLabel}</b>\n\n` +
+    `<b>Вчера</b> (${yesterday.ymd})\n` +
+    `📥 Позиций: <b>${yesterdayLeads}</b> · 💰 <b>${yesterdayProfitLabel}</b>`;
 
   await sendToAdmins(text);
 
   return {
-    date: ymd,
+    date: today.ymd,
+    timeLabel,
     newLeads,
+    paidOrAwaiting,
+    rejectedToday,
     newWithdrawals,
     pendingWithdrawals,
-    companyProfit: profit,
+    companyProfit: profitToday,
     companyProfitLabel,
     openProcessing,
+    yesterdayLeads,
+    yesterdayProfitLabel,
     sent: true,
   };
 }

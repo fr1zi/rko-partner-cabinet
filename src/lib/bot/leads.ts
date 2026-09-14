@@ -54,6 +54,13 @@ export async function ensureBotLeadColumns() {
   } catch {
     /* ignore */
   }
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "BotLead" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`
+    );
+  } catch {
+    /* ignore */
+  }
 }
 
 /** @deprecated alias — use ensureBotLeadColumns */
