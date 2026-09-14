@@ -195,15 +195,67 @@ export async function resetLeaderboardPeriod() {
   });
 }
 
-/** Sum company margin on paid leads (45% normal, 55% admin-ref). */
-export async function getCompanyProfit(): Promise<{
+function moscowTodayBounds(): { start: Date; end: Date } {
+  const todayYmd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const start = new Date(`${todayYmd}T00:00:00+03:00`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
+function moscowMonthBounds(): { start: Date; end: Date } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const y = Number(parts.find((p) => p.type === "year")?.value);
+  const mo = Number(parts.find((p) => p.type === "month")?.value);
+  const start = new Date(`${y}-${String(mo).padStart(2, "0")}-01T00:00:00+03:00`);
+  const endMo = mo === 12 ? 1 : mo + 1;
+  const endY = mo === 12 ? y + 1 : y;
+  const end = new Date(
+    `${endY}-${String(endMo).padStart(2, "0")}-01T00:00:00+03:00`
+  );
+  return { start, end };
+}
+
+/** Sum company margin on paid / awaiting_payout leads (45% normal, 55% admin-ref). */
+export async function getCompanyProfit(opts?: {
+  start?: Date;
+  end?: Date;
+  /** Include awaiting_payout as well as paid (default true for day/month dashboards). */
+  includeAwaiting?: boolean;
+}): Promise<{
   companyProfit: number;
   companyProfitLabel: string;
   paidLeads: number;
 }> {
   await ensureHoldColumn();
+  const includeAwaiting = opts?.includeAwaiting !== false;
+  const status = includeAwaiting
+    ? { in: ["paid", "awaiting_payout"] as string[] }
+    : "paid";
+  const dateFilter =
+    opts?.start && opts?.end
+      ? {
+          OR: [
+            { approvedAt: { gte: opts.start, lt: opts.end } },
+            {
+              AND: [
+                { approvedAt: null },
+                { createdAt: { gte: opts.start, lt: opts.end } },
+              ],
+            },
+          ],
+        }
+      : {};
   const leads = await prisma.botLead.findMany({
-    where: { status: "paid" },
+    where: { status, ...dateFilter },
     include: {
       product: { select: { reward: true, subscriberPrice: true } },
       referrer: { select: { role: true } },
@@ -219,7 +271,6 @@ export async function getCompanyProfit(): Promise<{
       inviteLinkName: l.client.inviteLinkName,
     });
     const sub = l.subscriberAmount ?? l.product.subscriberPrice ?? 0;
-    // Admin-ref: traffer leg is 0 so owner margin uses 55% of CPA
     const prem = adminRef
       ? 0
       : l.premiumAmount ?? l.product.reward ?? 0;
@@ -230,6 +281,25 @@ export async function getCompanyProfit(): Promise<{
     companyProfit: profit,
     companyProfitLabel: formatMoney(profit),
     paidLeads: leads.length,
+  };
+}
+
+export async function getCompanyProfitDayMonth() {
+  const day = moscowTodayBounds();
+  const month = moscowMonthBounds();
+  const [today, monthP, all] = await Promise.all([
+    getCompanyProfit({ start: day.start, end: day.end }),
+    getCompanyProfit({ start: month.start, end: month.end }),
+    getCompanyProfit({ includeAwaiting: false }),
+  ]);
+  return {
+    today: today.companyProfit,
+    todayLabel: today.companyProfitLabel,
+    month: monthP.companyProfit,
+    monthLabel: monthP.companyProfitLabel,
+    allTime: all.companyProfit,
+    allTimeLabel: all.companyProfitLabel,
+    paidLeads: all.paidLeads,
   };
 }
 

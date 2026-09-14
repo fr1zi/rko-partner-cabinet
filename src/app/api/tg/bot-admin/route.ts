@@ -18,7 +18,7 @@ import {
 import { refLinkFor } from "@/lib/bot/users";
 import { setLeadStatus, removeOrderLine, restoreOrderLine } from "@/lib/bot/leads";
 import {
-  getCompanyProfit,
+  getCompanyProfitDayMonth,
   getTrafferLeaderboard,
   getTaxReport,
   currentYearMonth,
@@ -197,7 +197,7 @@ export async function GET(req: NextRequest) {
         _sum: { amount: true },
       }),
       getChannelAudienceStats(true),
-      getCompanyProfit(),
+      getCompanyProfitDayMonth(),
       getTrafferLeaderboard(10),
       getTaxReport(monthParam),
     ]);
@@ -210,8 +210,12 @@ export async function GET(req: NextRequest) {
       channelMembersTotal: audience?.total ?? 0,
       credited: sum._sum.amount || 0,
       creditedLabel: formatMoney(sum._sum.amount || 0),
-      companyProfit: profit.companyProfit,
-      companyProfitLabel: profit.companyProfitLabel,
+      companyProfit: profit.allTime,
+      companyProfitLabel: profit.allTimeLabel,
+      companyProfitToday: profit.today,
+      companyProfitTodayLabel: profit.todayLabel,
+      companyProfitMonth: profit.month,
+      companyProfitMonthLabel: profit.monthLabel,
       paidLeads: profit.paidLeads,
     },
     taxReport,

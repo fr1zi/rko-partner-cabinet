@@ -104,7 +104,15 @@ function AdminBody({
           <StatTile label="Клиенты" value={String(s.clients ?? 0)} />
           <StatTile label="Заявки" value={String(s.leads ?? 0)} />
           <StatTile
-            label="Прибыль компании"
+            label="Прибыль за день"
+            value={String(s.companyProfitTodayLabel ?? "0")}
+          />
+          <StatTile
+            label="Прибыль за месяц"
+            value={String(s.companyProfitMonthLabel ?? "0")}
+          />
+          <StatTile
+            label="Прибыль всего"
             value={String(s.companyProfitLabel ?? "0")}
             wide
           />

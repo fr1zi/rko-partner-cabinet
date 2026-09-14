@@ -44,6 +44,8 @@ export type DailyDigestSummary = {
   pendingWithdrawals: number;
   companyProfit: number;
   companyProfitLabel: string;
+  companyProfitMonth: number;
+  companyProfitMonthLabel: string;
   openProcessing: number;
   yesterdayLeads: number;
   yesterdayProfitLabel: string;
@@ -93,11 +95,13 @@ async function companyProfitForRange(
   return profit;
 }
 
-/** Live day dashboard for admins — today so far (MSK) + yesterday snapshot. */
+/** Live day dashboard for admins — today so far (MSK) + month + yesterday. */
 export async function buildAndSendDailyDigest(): Promise<DailyDigestSummary> {
   await ensureHoldColumn();
   const today = moscowDayBounds(0);
   const yesterday = moscowDayBounds(-1);
+  const monthYmd = today.ymd.slice(0, 7) + "-01";
+  const monthStartMsk = new Date(`${monthYmd}T00:00:00+03:00`);
   const timeLabel = new Intl.DateTimeFormat("ru-RU", {
     timeZone: "Europe/Moscow",
     hour: "2-digit",
@@ -112,6 +116,7 @@ export async function buildAndSendDailyDigest(): Promise<DailyDigestSummary> {
     pendingWithdrawals,
     openProcessing,
     profitToday,
+    profitMonth,
     yesterdayLeads,
     profitYesterday,
   ] = await Promise.all([
@@ -135,7 +140,6 @@ export async function buildAndSendDailyDigest(): Promise<DailyDigestSummary> {
     prisma.botLead.count({
       where: {
         status: "rejected",
-        // no updatedAt on BotLead in prod — approximate by createdAt today
         createdAt: { gte: today.start, lt: today.end },
       },
     }),
@@ -145,6 +149,7 @@ export async function buildAndSendDailyDigest(): Promise<DailyDigestSummary> {
     prisma.withdrawal.count({ where: { status: "new" } }),
     prisma.botLead.count({ where: { status: "processing" } }),
     companyProfitForRange(today.start, today.end),
+    companyProfitForRange(monthStartMsk, today.end),
     prisma.botLead.count({
       where: { createdAt: { gte: yesterday.start, lt: yesterday.end } },
     }),
@@ -152,6 +157,7 @@ export async function buildAndSendDailyDigest(): Promise<DailyDigestSummary> {
   ]);
 
   const companyProfitLabel = formatMoney(profitToday);
+  const monthProfitLabel = formatMoney(profitMonth);
   const yesterdayProfitLabel = formatMoney(profitYesterday);
   const text =
     `📊 <b>Дашборд дня</b> · ${today.ymd} · ${timeLabel} МСК\n\n` +
@@ -162,7 +168,8 @@ export async function buildAndSendDailyDigest(): Promise<DailyDigestSummary> {
     `💸 Заявок на вывод: <b>${newWithdrawals}</b>\n` +
     `⏳ Выводы в очереди: <b>${pendingWithdrawals}</b>\n` +
     `🔄 В обработке всего: <b>${openProcessing}</b>\n` +
-    `💰 Прибыль сегодня: <b>${companyProfitLabel}</b>\n\n` +
+    `💰 Прибыль сегодня: <b>${companyProfitLabel}</b>\n` +
+    `📅 Прибыль за месяц: <b>${monthProfitLabel}</b>\n\n` +
     `<b>Вчера</b> (${yesterday.ymd})\n` +
     `📥 Позиций: <b>${yesterdayLeads}</b> · 💰 <b>${yesterdayProfitLabel}</b>`;
 
@@ -178,6 +185,8 @@ export async function buildAndSendDailyDigest(): Promise<DailyDigestSummary> {
     pendingWithdrawals,
     companyProfit: profitToday,
     companyProfitLabel,
+    companyProfitMonth: profitMonth,
+    companyProfitMonthLabel: monthProfitLabel,
     openProcessing,
     yesterdayLeads,
     yesterdayProfitLabel,
