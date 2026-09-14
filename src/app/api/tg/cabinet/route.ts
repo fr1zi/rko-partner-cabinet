@@ -153,8 +153,11 @@ export async function GET() {
       product: l.product.bank
         ? `${l.product.title} · ${l.product.bank}`
         : l.product.title,
+      bank: l.product.bank || "",
       subscriberAmount: l.subscriberAmount ?? l.product.subscriberPrice,
       premium: l.premiumAmount ?? l.product.reward,
+      adminComment: l.adminComment || null,
+      approvedAt: l.approvedAt || null,
       createdAt: l.createdAt,
     })),
     referrals: refStatuses,

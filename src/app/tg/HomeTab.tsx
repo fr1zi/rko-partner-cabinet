@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { CabinetData, TgRole } from "./types";
-import { formatDate, money, statusLabel } from "./utils";
+import { formatDate, isSubscriberClosedOrder, money, statusLabel } from "./utils";
 
 export type AdminHomeStats = {
   trafters?: number;
@@ -92,6 +92,9 @@ export function HomeTab({
   }
 
   if (isSubscriber) {
+    const apps = data.applications || [];
+    const openApps = apps.filter((a) => !isSubscriberClosedOrder(a.status));
+    const closedApps = apps.filter((a) => isSubscriberClosedOrder(a.status));
     return (
       <div className="tg-stack">
         <section className="tg-card">
@@ -129,11 +132,35 @@ export function HomeTab({
         </section>
         <section>
           <h2 className="tg-section-label">Мои заявки</h2>
-          {(data.applications || []).length === 0 ? (
-            <p className="tg-muted text-sm">Пока нет заявок — оставьте из «Продукты».</p>
+          {openApps.length === 0 ? (
+            <p className="tg-muted text-sm">
+              Нет открытых — оставьте из «Продукты».
+            </p>
           ) : (
             <div className="tg-stack">
-              {(data.applications || []).map((a) => {
+              {openApps.map((a) => (
+                <article key={a.id} className="tg-card space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="tg-card-title">{a.product}</p>
+                    <span className={`tg-status tg-status-${a.status}`}>
+                      {statusLabel(a.status)}
+                    </span>
+                  </div>
+                  {a.createdAt ? (
+                    <p className="tg-muted text-xs">{formatDate(a.createdAt)}</p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+        <section>
+          <h2 className="tg-section-label">Закрытые заказы</h2>
+          {closedApps.length === 0 ? (
+            <p className="tg-muted text-sm">Пока нет закрытых заказов</p>
+          ) : (
+            <div className="tg-stack">
+              {closedApps.map((a) => {
                 const canClaim =
                   a.status === "awaiting_payout" || a.status === "paid";
                 return (
@@ -144,12 +171,24 @@ export function HomeTab({
                         {statusLabel(a.status)}
                       </span>
                     </div>
-                    {a.subscriberAmount ? (
+                    {a.subscriberAmount != null ? (
                       <p className="tg-muted text-sm">
-                        Вам: {money(a.subscriberAmount)}
+                        Выплата: {money(a.subscriberAmount)}
+                        {a.status === "paid"
+                          ? " · начислено"
+                          : a.status === "awaiting_payout"
+                            ? " · ждём перевод"
+                            : ""}
                       </p>
                     ) : null}
-                    {a.createdAt ? (
+                    {a.adminComment ? (
+                      <p className="tg-muted text-xs">Комментарий: {a.adminComment}</p>
+                    ) : null}
+                    {a.approvedAt ? (
+                      <p className="tg-muted text-xs">
+                        Обновлено: {formatDate(a.approvedAt)}
+                      </p>
+                    ) : a.createdAt ? (
                       <p className="tg-muted text-xs">{formatDate(a.createdAt)}</p>
                     ) : null}
                     {canClaim ? (

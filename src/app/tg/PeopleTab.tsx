@@ -1,7 +1,7 @@
 "use client";
 
 import type { CabinetData } from "./types";
-import { formatDate, money, statusLabel } from "./utils";
+import { formatDate, money, statusLabel, tgHandle } from "./utils";
 
 export type AdminPerson = {
   id: string;
@@ -64,20 +64,19 @@ export function PeopleTab({
     <div className="tg-stack">
       <h2 className="tg-section-label">Ваши клиенты</h2>
       {referrals.map((r) => {
-        const name = r.firstName || r.username || r.telegramId;
         const handle = r.username
-          ? `@${r.username.replace(/^@/, "")}`
+          ? `@${String(r.username).replace(/^@/, "")}`
           : `id ${r.telegramId}`;
         const issues = r.issues || [];
         return (
           <div key={r.id} className="tg-card space-y-2">
             <div className="tg-person-row">
               <div className="tg-person-avatar" aria-hidden>
-                {String(name).slice(0, 1).toUpperCase()}
+                {handle.replace(/^@/, "").slice(0, 1).toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="tg-card-title truncate">{name}</p>
-                <p className="tg-muted text-xs truncate">{handle}</p>
+                <p className="tg-card-title truncate">{handle}</p>
+                <p className="tg-muted text-xs truncate">клиент</p>
                 {r.createdAt ? (
                   <p className="tg-muted text-xs">{formatDate(r.createdAt)}</p>
                 ) : null}
@@ -139,9 +138,8 @@ function AdminPeopleTable({
         уходит трафферу.
       </p>
       {people.map((u) => {
-        const name = u.username || u.firstName || u.telegramId;
         const handle = u.username
-          ? `@${u.username.replace(/^@/, "")}`
+          ? `@${String(u.username).replace(/^@/, "")}`
           : `id ${u.telegramId}`;
         const roleRu =
           u.role === "admin"
@@ -152,7 +150,7 @@ function AdminPeopleTable({
         const issued = new Set((u.issues || []).map((x) => x.productId));
         const left = products.filter((p) => !issued.has(p.id));
         const isAdm = u.role === "admin";
-        const initial = String(name).replace(/^@/, "").slice(0, 1).toUpperCase();
+        const initial = handle.replace(/^@|^id\s+/, "").slice(0, 1).toUpperCase();
 
         return (
           <article key={u.id} className="tg-card tg-people-card">
@@ -163,9 +161,9 @@ function AdminPeopleTable({
               <div className="min-w-0 flex-1">
                 <p className="tg-card-title truncate">
                   {u.isBanned ? "🚫 " : ""}
-                  {name}
+                  {handle}
                 </p>
-                <p className="tg-muted text-xs truncate">{handle}</p>
+                <p className="tg-muted text-xs truncate">{roleRu}</p>
               </div>
               <span className="tg-role-pill">{roleRu}</span>
             </div>

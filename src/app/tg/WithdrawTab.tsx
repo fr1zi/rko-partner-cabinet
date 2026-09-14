@@ -1,7 +1,13 @@
 "use client";
 
 import type { CabinetData } from "./types";
-import { formatDate, money, statusLabel, txTypeLabel } from "./utils";
+import {
+  formatDate,
+  isClosedWithdrawal,
+  money,
+  statusLabel,
+  txTypeLabel,
+} from "./utils";
 
 export function WithdrawTab({
   data,
@@ -20,6 +26,9 @@ export function WithdrawTab({
   onWithdraw: (e: React.FormEvent) => void;
   disabled?: boolean;
 }) {
+  const openWd = data.withdrawals.filter((w) => !isClosedWithdrawal(w.status));
+  const closedWd = data.withdrawals.filter((w) => isClosedWithdrawal(w.status));
+
   return (
     <div className="tg-stack">
       <section className="tg-card">
@@ -78,10 +87,36 @@ export function WithdrawTab({
 
       <section className="tg-stack-sm">
         <h2 className="tg-section-label">Заявки на вывод</h2>
-        {data.withdrawals.length === 0 ? (
-          <div className="tg-empty-sm">Нет заявок</div>
+        {openWd.length === 0 ? (
+          <div className="tg-empty-sm">Нет открытых заявок</div>
         ) : (
-          data.withdrawals.map((w) => (
+          openWd.map((w) => (
+            <div key={w.id} className="tg-card tg-tx-row">
+              <div>
+                <p className="font-semibold text-white">{money(w.amount)}</p>
+                <p className="tg-muted text-xs mt-0.5 truncate max-w-[200px]">
+                  {w.details}
+                </p>
+              </div>
+              <div className="text-right">
+                <span className={`tg-status tg-status-${w.status}`}>
+                  {statusLabel(w.status)}
+                </span>
+                <p className="tg-muted text-[11px] mt-1">
+                  {formatDate(w.createdAt)}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+      </section>
+
+      <section className="tg-stack-sm">
+        <h2 className="tg-section-label">Закрытые заявки</h2>
+        {closedWd.length === 0 ? (
+          <div className="tg-empty-sm">Пока пусто</div>
+        ) : (
+          closedWd.map((w) => (
             <div key={w.id} className="tg-card tg-tx-row">
               <div>
                 <p className="font-semibold text-white">{money(w.amount)}</p>

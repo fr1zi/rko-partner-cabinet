@@ -3,13 +3,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { BANKS } from "@/lib/banks";
 import type { AdminSubTab } from "./types";
-import { formatDate, formatProductLabel, money, statusLabel, tgHandle } from "./utils";
+import {
+  formatDate,
+  formatProductLabel,
+  isClosedLead,
+  isClosedWithdrawal,
+  matchesUsernameQuery,
+  money,
+  statusLabel,
+  tgHandle,
+} from "./utils";
 
 const SUBS: Array<[AdminSubTab, string]> = [
   ["stats", "Итоги"],
   ["products", "Цены"],
   ["premiums", "Премии"],
-  ["leads", "Заявки"],
+  ["leads", "Заказы"],
   ["withdrawals", "Выводы"],
   ["users", "Юзеры"],
 ];
@@ -117,198 +126,22 @@ function AdminBody({
   }
 
   if (tab === "leads") {
-    const leads = (data.leads || []) as Array<{
-      id: string;
-      status: string;
-      fullName: string;
-      phone: string;
-      subscriberAmount?: number | null;
-      premiumAmount?: number | null;
-      product: { title: string; bank?: string; subscriberPrice?: number; reward?: number };
-      client: { username: string | null; telegramId: string; firstName?: string | null };
-      referrer?: { username: string | null; telegramId?: string; firstName?: string | null } | null;
-    }>;
-    if (leads.length === 0) return <div className="tg-empty">Нет заявок</div>;
     return (
-      <div className="tg-stack">
-        <p className="tg-note-plate">
-          Статусы: в обработке → ждём выплату → выплачено. При успехе пишете
-          сумму подписчику, премия траффера берётся из продукта.
-        </p>
-        {leads.map((l) => {
-          const st = l.status === "new" || l.status === "duplicate"
-            ? "processing"
-            : l.status === "approved"
-              ? "awaiting_payout"
-              : l.status;
-          const defAmt = l.subscriberAmount ?? l.product.subscriberPrice ?? 0;
-          const prem = l.premiumAmount ?? l.product.reward ?? 0;
-          const who = tgHandle(l.client.username, l.client.telegramId);
-          const refName = l.referrer
-            ? tgHandle(l.referrer.username, l.referrer.telegramId, "Админы")
-            : "Админы";
-          const productLabel = formatProductLabel(
-            l.product.title,
-            l.product.bank
-          );
-          return (
-            <div key={l.id} className="tg-card space-y-3">
-              <div>
-                <p className="tg-card-title">{who}</p>
-                {l.fullName ? (
-                  <p className="tg-muted text-xs mt-1">ФИО в заявке: {l.fullName}</p>
-                ) : null}
-                <p className="tg-muted text-sm mt-1">
-                  {productLabel}
-                  {l.phone ? ` · ${l.phone}` : ""}
-                </p>
-                <p className="tg-muted text-xs mt-1">рефка: {refName}</p>
-                <span className={`tg-status tg-status-${st} mt-2 inline-block`}>
-                  {statusLabel(st)}
-                </span>
-              </div>
-              <div className="tg-edit-block">
-                <label className="tg-label">Сумма подписчику, ₽</label>
-                <input
-                  className="tg-input"
-                  type="number"
-                  defaultValue={defAmt}
-                  disabled={disabled}
-                  id={`amt-${l.id}`}
-                />
-                <p className="tg-muted text-xs">
-                  Премия траффера: {money(prem)}
-                </p>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  type="button"
-                  className="tg-btn-secondary text-xs"
-                  disabled={disabled || st === "processing"}
-                  onClick={() =>
-                    void onAction({
-                      action: "lead_set_status",
-                      id: l.id,
-                      status: "processing",
-                    })
-                  }
-                >
-                  В обработке
-                </button>
-                <button
-                  type="button"
-                  className="tg-btn-primary text-xs"
-                  disabled={disabled || st === "awaiting_payout"}
-                  onClick={() => {
-                    const el = document.getElementById(
-                      `amt-${l.id}`
-                    ) as HTMLInputElement | null;
-                    void onAction({
-                      action: "lead_set_status",
-                      id: l.id,
-                      status: "awaiting_payout",
-                      subscriberAmount: Number(el?.value || defAmt),
-                    });
-                  }}
-                >
-                  Ждём выплату
-                </button>
-                <button
-                  type="button"
-                  className="tg-btn-primary text-xs"
-                  disabled={disabled || st === "paid"}
-                  onClick={() => {
-                    const el = document.getElementById(
-                      `amt-${l.id}`
-                    ) as HTMLInputElement | null;
-                    void onAction({
-                      action: "lead_set_status",
-                      id: l.id,
-                      status: "paid",
-                      subscriberAmount: Number(el?.value || defAmt),
-                    });
-                  }}
-                >
-                  Выплачено
-                </button>
-                <button
-                  type="button"
-                  className="tg-btn-secondary text-xs"
-                  disabled={disabled || st === "rejected"}
-                  onClick={() => {
-                    const comment =
-                      prompt("Почему не прошло") || "не прошло";
-                    void onAction({
-                      action: "lead_set_status",
-                      id: l.id,
-                      status: "rejected",
-                      comment,
-                    });
-                  }}
-                >
-                  Не прошло
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <AdminLeadsPanel
+        leads={(data.leads || []) as AdminLeadRow[]}
+        onAction={onAction}
+        disabled={disabled}
+      />
     );
   }
 
   if (tab === "withdrawals") {
-    const list = (data.withdrawals || []) as Array<{
-      id: string;
-      amount: number;
-      status: string;
-      details: string;
-      user: { username: string | null; telegramId: string };
-    }>;
-    if (list.length === 0) return <div className="tg-empty">Нет выводов</div>;
     return (
-      <div className="tg-stack">
-        {list.map((w) => (
-          <div key={w.id} className="tg-card space-y-3">
-            <div>
-              <p className="tg-card-title">{money(w.amount)}</p>
-              <p className="tg-muted text-sm mt-1">
-                {w.user.username || w.user.telegramId} · {w.status}
-              </p>
-              <p className="tg-muted text-xs mt-1">{w.details}</p>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <button
-                type="button"
-                className="tg-btn-secondary text-xs"
-                disabled={disabled}
-                onClick={() =>
-                  void onAction({ action: "wd_approve", id: w.id })
-                }
-              >
-                Одобрить
-              </button>
-              <button
-                type="button"
-                className="tg-btn-secondary text-xs"
-                disabled={disabled}
-                onClick={() =>
-                  void onAction({ action: "wd_reject", id: w.id })
-                }
-              >
-                Отклонить
-              </button>
-              <button
-                type="button"
-                className="tg-btn-primary text-xs"
-                disabled={disabled}
-                onClick={() => void onAction({ action: "wd_paid", id: w.id })}
-              >
-                Выплачено
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      <AdminWithdrawalsPanel
+        list={(data.withdrawals || []) as AdminWdRow[]}
+        onAction={onAction}
+        disabled={disabled}
+      />
     );
   }
 
@@ -358,7 +191,7 @@ function AdminBody({
               <div>
                 <p className="tg-card-title">
                   {u.isBanned ? "🚫 " : ""}
-                  {tgHandle(u.username, u.telegramId, u.firstName)}
+                  {tgHandle(u.username, u.telegramId)}
                 </p>
                 <p className="tg-muted text-sm mt-1">
                   {roleRu} · рефка: {u.refSource || "Админы"}
@@ -508,6 +341,306 @@ function StatTile({
   );
 }
 
+
+
+type AdminLeadRow = {
+  id: string;
+  status: string;
+  fullName: string;
+  phone: string;
+  subscriberAmount?: number | null;
+  premiumAmount?: number | null;
+  adminComment?: string | null;
+  product: { title: string; bank?: string; subscriberPrice?: number; reward?: number };
+  client: { username: string | null; telegramId: string; firstName?: string | null };
+  referrer?: { username: string | null; telegramId?: string; firstName?: string | null } | null;
+};
+
+type AdminWdRow = {
+  id: string;
+  amount: number;
+  status: string;
+  details: string;
+  user: { username: string | null; telegramId: string };
+};
+
+function AdminLeadsPanel({
+  leads,
+  onAction,
+  disabled,
+}: {
+  leads: AdminLeadRow[];
+  onAction: (body: Record<string, unknown>) => Promise<void>;
+  disabled?: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const [bucket, setBucket] = useState<"open" | "closed">("open");
+  const filtered = useMemo(() => {
+    return leads.filter((l) => {
+      const closed = isClosedLead(l.status);
+      if (bucket === "open" && closed) return false;
+      if (bucket === "closed" && !closed) return false;
+      return matchesUsernameQuery(
+        q,
+        l.client.username,
+        l.client.telegramId,
+        l.fullName
+      );
+    });
+  }, [leads, q, bucket]);
+
+  return (
+    <div className="tg-stack">
+      <p className="tg-note-plate">
+        Заказы по продуктам. Открытые — в работе; закрытые — выплачено или
+        отклонено. Поиск по @username.
+      </p>
+      <input
+        className="tg-input"
+        placeholder="Поиск @username"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+      <div className="tg-admin-chips">
+        <button
+          type="button"
+          className={bucket === "open" ? "tg-chip tg-chip-active" : "tg-chip"}
+          onClick={() => setBucket("open")}
+        >
+          Открытые
+        </button>
+        <button
+          type="button"
+          className={bucket === "closed" ? "tg-chip tg-chip-active" : "tg-chip"}
+          onClick={() => setBucket("closed")}
+        >
+          Закрытые
+        </button>
+      </div>
+      {filtered.length === 0 ? (
+        <div className="tg-empty">Нет заказов</div>
+      ) : (
+        filtered.map((l) => {
+          const st =
+            l.status === "new" || l.status === "duplicate"
+              ? "processing"
+              : l.status === "approved"
+                ? "awaiting_payout"
+                : l.status;
+          const defAmt = l.subscriberAmount ?? l.product.subscriberPrice ?? 0;
+          const prem = l.premiumAmount ?? l.product.reward ?? 0;
+          const who = tgHandle(l.client.username, l.client.telegramId);
+          const refName = l.referrer
+            ? tgHandle(l.referrer.username, l.referrer.telegramId)
+            : "Админы";
+          const productLabel = formatProductLabel(
+            l.product.title,
+            l.product.bank
+          );
+          return (
+            <div key={l.id} className="tg-card space-y-3">
+              <div>
+                <p className="tg-card-title">{who}</p>
+                {l.fullName && !String(l.fullName).startsWith("@") ? (
+                  <p className="tg-muted text-xs mt-1">ФИО в заявке: {l.fullName}</p>
+                ) : null}
+                <p className="tg-muted text-sm mt-1">
+                  {productLabel}
+                  {l.phone ? ` · ${l.phone}` : ""}
+                </p>
+                <p className="tg-muted text-xs mt-1">рефка: {refName}</p>
+                <span className={`tg-status tg-status-${st} mt-2 inline-block`}>
+                  {statusLabel(st)}
+                </span>
+              </div>
+              <div className="tg-edit-block">
+                <label className="tg-label">Сумма подписчику, ₽</label>
+                <input
+                  className="tg-input"
+                  type="number"
+                  defaultValue={defAmt}
+                  disabled={disabled}
+                  id={`amt-${l.id}`}
+                />
+                <p className="tg-muted text-xs">
+                  Премия траффера: {money(prem)}
+                </p>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs"
+                  disabled={disabled || st === "processing"}
+                  onClick={() =>
+                    void onAction({
+                      action: "lead_set_status",
+                      id: l.id,
+                      status: "processing",
+                    })
+                  }
+                >
+                  В обработке
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-primary text-xs"
+                  disabled={disabled || st === "awaiting_payout"}
+                  onClick={() => {
+                    const el = document.getElementById(
+                      `amt-${l.id}`
+                    ) as HTMLInputElement | null;
+                    void onAction({
+                      action: "lead_set_status",
+                      id: l.id,
+                      status: "awaiting_payout",
+                      subscriberAmount: Number(el?.value || defAmt),
+                    });
+                  }}
+                >
+                  Ждём выплату
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-primary text-xs"
+                  disabled={disabled || st === "paid"}
+                  onClick={() => {
+                    const el = document.getElementById(
+                      `amt-${l.id}`
+                    ) as HTMLInputElement | null;
+                    void onAction({
+                      action: "lead_set_status",
+                      id: l.id,
+                      status: "paid",
+                      subscriberAmount: Number(el?.value || defAmt),
+                    });
+                  }}
+                >
+                  Выплачено
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs"
+                  disabled={disabled || st === "rejected"}
+                  onClick={() => {
+                    const comment =
+                      prompt("Почему не прошло") || "не прошло";
+                    void onAction({
+                      action: "lead_set_status",
+                      id: l.id,
+                      status: "rejected",
+                      comment,
+                    });
+                  }}
+                >
+                  Не прошло
+                </button>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+function AdminWithdrawalsPanel({
+  list,
+  onAction,
+  disabled,
+}: {
+  list: AdminWdRow[];
+  onAction: (body: Record<string, unknown>) => Promise<void>;
+  disabled?: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const [bucket, setBucket] = useState<"open" | "closed">("open");
+  const filtered = useMemo(() => {
+    return list.filter((w) => {
+      const closed = isClosedWithdrawal(w.status);
+      if (bucket === "open" && closed) return false;
+      if (bucket === "closed" && !closed) return false;
+      return matchesUsernameQuery(q, w.user.username, w.user.telegramId);
+    });
+  }, [list, q, bucket]);
+
+  return (
+    <div className="tg-stack">
+      <p className="tg-note-plate">
+        Выплаченные и отклонённые выводы — в «Закрытые». Поиск по @username.
+      </p>
+      <input
+        className="tg-input"
+        placeholder="Поиск @username"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+      <div className="tg-admin-chips">
+        <button
+          type="button"
+          className={bucket === "open" ? "tg-chip tg-chip-active" : "tg-chip"}
+          onClick={() => setBucket("open")}
+        >
+          Открытые
+        </button>
+        <button
+          type="button"
+          className={bucket === "closed" ? "tg-chip tg-chip-active" : "tg-chip"}
+          onClick={() => setBucket("closed")}
+        >
+          Закрытые
+        </button>
+      </div>
+      {filtered.length === 0 ? (
+        <div className="tg-empty">Нет выводов</div>
+      ) : (
+        filtered.map((w) => (
+          <div key={w.id} className="tg-card space-y-3">
+            <div>
+              <p className="tg-card-title">{money(w.amount)}</p>
+              <p className="tg-muted text-sm mt-1">
+                {tgHandle(w.user.username, w.user.telegramId)} ·{" "}
+                {statusLabel(w.status)}
+              </p>
+              <p className="tg-muted text-xs mt-1">{w.details}</p>
+            </div>
+            {!isClosedWithdrawal(w.status) ? (
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs"
+                  disabled={disabled}
+                  onClick={() =>
+                    void onAction({ action: "wd_approve", id: w.id })
+                  }
+                >
+                  Одобрить
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs"
+                  disabled={disabled}
+                  onClick={() =>
+                    void onAction({ action: "wd_reject", id: w.id })
+                  }
+                >
+                  Отклонить
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-primary text-xs"
+                  disabled={disabled}
+                  onClick={() => void onAction({ action: "wd_paid", id: w.id })}
+                >
+                  Выплачено
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
 
 type AdminProductRow = {
   id: string;

@@ -48,7 +48,6 @@ export function txTypeLabel(type: string) {
   return map[type] || type;
 }
 
-
 /** Prefer @username; fall back to telegram id — never firstName as primary. */
 export function tgHandle(
   username?: string | null,
@@ -62,7 +61,6 @@ export function tgHandle(
   return f || "—";
 }
 
-
 export function formatProductLabel(
   title?: string | null,
   bank?: string | null
@@ -70,4 +68,45 @@ export function formatProductLabel(
   const t = (title || "").trim() || "Продукт";
   const b = (bank || "").trim();
   return b ? `${t} · ${b}` : t;
+}
+
+/** Withdrawal closed after payout or reject. */
+export function isClosedWithdrawal(status: string) {
+  return status === "paid" || status === "rejected";
+}
+
+/** Product order closed when paid or rejected; awaiting_payout stays open for admin action. */
+export function isClosedLead(status: string) {
+  const st =
+    status === "new" || status === "duplicate"
+      ? "processing"
+      : status === "approved"
+        ? "awaiting_payout"
+        : status;
+  return st === "paid" || st === "rejected";
+}
+
+/** Subscriber «закрытые заказы»: payout tracking (awaiting + paid + rejected). */
+export function isSubscriberClosedOrder(status: string) {
+  const st =
+    status === "new" || status === "duplicate"
+      ? "processing"
+      : status === "approved"
+        ? "awaiting_payout"
+        : status;
+  return st === "awaiting_payout" || st === "paid" || st === "rejected";
+}
+
+export function matchesUsernameQuery(
+  query: string,
+  username?: string | null,
+  telegramId?: string | null,
+  extra?: string | null
+) {
+  const q = query.trim().toLowerCase().replace(/^@/, "");
+  if (!q) return true;
+  const u = (username || "").toLowerCase().replace(/^@/, "");
+  const id = (telegramId || "").toLowerCase();
+  const e = (extra || "").toLowerCase();
+  return u.includes(q) || id.includes(q) || e.includes(q) || `@${u}`.includes(q);
 }

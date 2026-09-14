@@ -27,8 +27,11 @@ export type CabinetData = {
     id: string;
     status: string;
     product: string;
+    bank?: string;
     subscriberAmount: number | null;
     premium: number;
+    adminComment?: string | null;
+    approvedAt?: string | null;
     createdAt: string;
   }>;
   stats: {
