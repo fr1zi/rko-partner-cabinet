@@ -1182,7 +1182,9 @@ function AdminUsersPanel({
               </p>
               <p className="tg-muted text-xs mt-1">
                 {u.createdAt ? formatDate(u.createdAt) : ""}
-                {u.balance != null ? ` · баланс ${money(u.balance)}` : ""}
+              </p>
+              <p className="text-sm mt-1">
+                Баланс: {money(Number(u.balance ?? 0))}
               </p>
             </div>
 
@@ -1273,23 +1275,44 @@ function AdminUsersPanel({
               >
                 {u.isBanned ? "Разбан" : "Бан"}
               </button>
+            </div>
+            <div className="flex gap-2 items-center flex-wrap">
+              <input
+                className="tg-input flex-1 min-w-[100px]"
+                type="number"
+                placeholder="Новый баланс"
+                disabled={disabled}
+                defaultValue={Math.round(Number(u.balance ?? 0))}
+                id={`bal-${u.id}`}
+              />
               <button
                 type="button"
-                className="tg-btn-secondary text-xs flex-1"
+                className="tg-btn-secondary text-xs"
                 disabled={disabled}
                 onClick={() => {
-                  const amount = Number(
-                    prompt("Корректировка баланса (±)") || 0
-                  );
-                  if (amount)
-                    void onAction({
-                      action: "user_adjust",
-                      id: u.id,
-                      amount,
-                    });
+                  const el = document.getElementById(
+                    `bal-${u.id}`
+                  ) as HTMLInputElement | null;
+                  const bal = Number(el?.value);
+                  if (!Number.isFinite(bal) || bal < 0) {
+                    alert("Укажите корректный баланс ≥ 0");
+                    return;
+                  }
+                  if (
+                    !confirm(
+                      `Установить баланс ${money(bal)} для ${tgHandle(u.username, u.telegramId)}?`
+                    )
+                  ) {
+                    return;
+                  }
+                  void onAction({
+                    action: "set_balance",
+                    userId: u.id,
+                    balance: bal,
+                  });
                 }}
               >
-                Баланс ±
+                Изменить баланс
               </button>
             </div>
           </div>
@@ -1316,9 +1339,9 @@ function AdminLeadsPanel({
 }) {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "processing" | "awaiting_payout" | "paid" | "rejected"
-  >("all");
-  const [bankFilter, setBankFilter] = useState<string>("all");
+    "processing" | "awaiting_payout" | "paid" | "rejected"
+  >("processing");
+  const [bankFilter, setBankFilter] = useState<string>("");
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
 
@@ -1330,6 +1353,16 @@ function AdminLeadsPanel({
     }
     return Array.from(set).sort();
   }, [leads]);
+
+  useEffect(() => {
+    if (banks.length === 0) {
+      if (bankFilter) setBankFilter("");
+      return;
+    }
+    if (!bankFilter || !banks.includes(bankFilter)) {
+      setBankFilter(banks[0]);
+    }
+  }, [banks, bankFilter]);
 
   const filteredLeads = useMemo(() => {
     return leads.filter((l) => {
@@ -1344,8 +1377,8 @@ function AdminLeadsPanel({
         return false;
       }
       const st = normalizeLeadSt(l.status);
-      if (statusFilter !== "all" && st !== statusFilter) return false;
-      if (bankFilter !== "all") {
+      if (st !== statusFilter) return false;
+      if (bankFilter) {
         const b = (l.product.bank || "").trim();
         if (b !== bankFilter) return false;
       }
@@ -1421,7 +1454,6 @@ function AdminLeadsPanel({
   }
 
   const statusChips: Array<[typeof statusFilter, string]> = [
-    ["all", "Все"],
     ["processing", "В обработке"],
     ["awaiting_payout", "Ждём выплату"],
     ["paid", "Выплачено"],
@@ -1455,15 +1487,6 @@ function AdminLeadsPanel({
       </div>
       {banks.length > 0 ? (
         <div className="tg-admin-chips">
-          <button
-            type="button"
-            className={
-              bankFilter === "all" ? "tg-chip tg-chip-active" : "tg-chip"
-            }
-            onClick={() => setBankFilter("all")}
-          >
-            Все банки
-          </button>
           {banks.map((b) => (
             <button
               key={b}

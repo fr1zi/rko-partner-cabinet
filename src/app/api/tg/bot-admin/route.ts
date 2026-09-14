@@ -488,12 +488,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, user: updated });
   }
 
+  if (action === "set_balance") {
+    const userId = String(body.userId || body.id || "");
+    const balance = Number(body.balance);
+    if (!userId || !Number.isFinite(balance) || balance < 0) {
+      return NextResponse.json({ error: "bad balance" }, { status: 400 });
+    }
+    const u = await prisma.botUser.findUnique({ where: { id: userId } });
+    if (!u) return NextResponse.json({ error: "not found" }, { status: 404 });
+    const delta = balance - u.balance;
+    await prisma.$transaction([
+      prisma.botUser.update({
+        where: { id: userId },
+        data: { balance },
+      }),
+      prisma.ledgerTx.create({
+        data: {
+          userId,
+          amount: delta,
+          type: "adjust",
+          comment: "admin_adjust",
+        },
+      }),
+    ]);
+    try {
+      await sendMessage(
+        u.telegramId,
+        `Баланс обновлён админом: ${formatMoney(balance)}`
+      );
+    } catch {
+      /* blocked / unreachable */
+    }
+    return NextResponse.json({ ok: true, balance });
+  }
+
   if (action === "user_adjust") {
     const id = String(body.id || "");
     const amount = Number(body.amount);
     if (!Number.isFinite(amount) || amount === 0) {
       return NextResponse.json({ error: "bad amount" }, { status: 400 });
     }
+    const u = await prisma.botUser.findUnique({ where: { id } });
+    if (!u) return NextResponse.json({ error: "not found" }, { status: 404 });
     await prisma.$transaction([
       prisma.botUser.update({
         where: { id },
@@ -504,10 +540,21 @@ export async function POST(req: NextRequest) {
           userId: id,
           amount,
           type: "adjust",
-          comment: String(body.comment || "корректировка админом"),
+          comment: String(body.comment || "admin_adjust"),
         },
       }),
     ]);
+    const fresh = await prisma.botUser.findUnique({ where: { id } });
+    try {
+      if (fresh) {
+        await sendMessage(
+          fresh.telegramId,
+          `Баланс обновлён админом: ${formatMoney(fresh.balance)}`
+        );
+      }
+    } catch {
+      /* blocked */
+    }
     return NextResponse.json({ ok: true });
   }
 

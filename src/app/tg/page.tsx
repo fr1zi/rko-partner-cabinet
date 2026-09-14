@@ -490,6 +490,7 @@ export default function TelegramMiniAppPage() {
                         productIds: ids,
                       })
                     }
+                    onAction={adminAction}
                     disabled={isDemo}
                     loading={loading && !peopleData}
                   />

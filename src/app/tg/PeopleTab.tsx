@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { CabinetData } from "./types";
+import { bankShort } from "@/lib/banks";
 import { formatDate, matchesUsernameQuery, money, statusLabel } from "./utils";
 
 export type AdminPerson = {
@@ -10,6 +11,7 @@ export type AdminPerson = {
   firstName?: string | null;
   telegramId: string;
   role: string;
+  balance?: number;
   createdAt?: string;
   refSource?: string | null;
   isBanned?: boolean;
@@ -57,9 +59,6 @@ function groupIssuesByOrder(issues: IssueLine[]) {
   return groups;
 }
 
-function productLabel(p: AdminProductOpt) {
-  return p.bank ? `${p.title} · ${p.bank}` : p.title;
-}
 
 export function PeopleTab({
   referrals,
@@ -67,6 +66,7 @@ export function PeopleTab({
   people,
   products,
   onIssue,
+  onAction,
   disabled,
   loading,
 }: {
@@ -75,6 +75,7 @@ export function PeopleTab({
   people?: AdminPerson[];
   products?: AdminProductOpt[];
   onIssue?: (userId: string, productIds: string[] | "all") => void;
+  onAction?: (body: Record<string, unknown>) => Promise<void>;
   disabled?: boolean;
   loading?: boolean;
 }) {
@@ -84,6 +85,7 @@ export function PeopleTab({
         people={people || []}
         products={products || []}
         onIssue={onIssue}
+        onAction={onAction}
         disabled={disabled}
         loading={loading}
       />
@@ -154,22 +156,195 @@ export function PeopleTab({
   );
 }
 
+
+function ComposeCheckPanel({
+  userId,
+  left,
+  picked,
+  composeBank,
+  setComposeBank,
+  setSelected,
+  disabled,
+  onIssue,
+  onDone,
+}: {
+  userId: string;
+  left: AdminProductOpt[];
+  picked: string[];
+  composeBank: string;
+  setComposeBank: (b: string) => void;
+  setSelected: Dispatch<SetStateAction<Record<string, string[]>>>;
+  disabled?: boolean;
+  onIssue: (userId: string, productIds: string[] | "all") => void;
+  onDone: () => void;
+}) {
+  const banksLeft = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of left) {
+      const b = (p.bank || "").trim();
+      if (b) set.add(b);
+    }
+    // products without bank go under «Прочее»
+    if (left.some((p) => !(p.bank || "").trim())) set.add("Прочее");
+    return Array.from(set).sort();
+  }, [left]);
+
+  const activeBank =
+    composeBank && banksLeft.includes(composeBank)
+      ? composeBank
+      : banksLeft[0] || "";
+
+  const inBank = left.filter((p) => {
+    const b = (p.bank || "").trim() || "Прочее";
+    return b === activeBank;
+  });
+
+  const pickedProducts = left.filter((p) => picked.includes(p.id));
+
+  function toggle(id: string, checked: boolean) {
+    setSelected((s) => {
+      const cur = s[userId] || [];
+      return {
+        ...s,
+        [userId]: checked
+          ? cur.filter((x) => x !== id)
+          : [...cur, id],
+      };
+    });
+  }
+
+  function removeChip(id: string) {
+    setSelected((s) => ({
+      ...s,
+      [userId]: (s[userId] || []).filter((x) => x !== id),
+    }));
+  }
+
+  return (
+    <div className="tg-people-block mt-2 space-y-2">
+      {pickedProducts.length > 0 ? (
+        <div className="space-y-1">
+          <span className="tg-people-meta-label">Выбрано</span>
+          <div className="flex flex-wrap gap-1.5">
+            {pickedProducts.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="tg-chip tg-chip-active"
+                disabled={disabled}
+                onClick={() => removeChip(p.id)}
+                title="Убрать"
+              >
+                {p.title}
+                {p.bank ? ` · ${bankShort(p.bank)}` : ""}
+                {" ×"}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {banksLeft.length > 0 ? (
+        <div>
+          <label className="tg-people-meta-label" htmlFor={`bank-${userId}`}>
+            Банк
+          </label>
+          <select
+            id={`bank-${userId}`}
+            className="tg-input mt-1"
+            value={activeBank}
+            disabled={disabled}
+            onChange={(e) => setComposeBank(e.target.value)}
+          >
+            {banksLeft.map((b) => (
+              <option key={b} value={b}>
+                {b === "Прочее" ? "Прочее" : bankShort(b) !== b ? `${bankShort(b)} (${b})` : b}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
+      <div className="space-y-2">
+        {inBank.length === 0 ? (
+          <p className="tg-muted text-xs">Нет продуктов в этой категории</p>
+        ) : (
+          inBank.map((p) => {
+            const checked = picked.includes(p.id);
+            return (
+              <label
+                key={p.id}
+                className="flex items-center gap-2 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={disabled}
+                  onChange={() => toggle(p.id, checked)}
+                />
+                <span className="truncate flex-1">{p.title}</span>
+                <span className="tg-muted text-xs shrink-0">
+                  {money(p.reward)}
+                </span>
+              </label>
+            );
+          })
+        )}
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <button
+          type="button"
+          className="tg-btn-primary flex-1 text-sm"
+          disabled={disabled || picked.length === 0}
+          onClick={() => {
+            const ids =
+              picked.length === left.length && left.length > 1
+                ? ("all" as const)
+                : picked;
+            onIssue(userId, ids);
+            onDone();
+          }}
+        >
+          Оформить чек
+          {picked.length > 0 ? ` (${picked.length})` : ""}
+        </button>
+        <button
+          type="button"
+          className="tg-btn-secondary flex-1 text-sm"
+          disabled={disabled || left.length === 0}
+          onClick={() => {
+            onIssue(userId, "all");
+            onDone();
+          }}
+        >
+          Весь оставшийся
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AdminPeopleTable({
   people,
   products,
   onIssue,
+  onAction,
   disabled,
   loading,
 }: {
   people: AdminPerson[];
   products: AdminProductOpt[];
   onIssue?: (userId: string, productIds: string[] | "all") => void;
+  onAction?: (body: Record<string, unknown>) => Promise<void>;
   disabled?: boolean;
   loading?: boolean;
 }) {
   const [expandedView, setExpandedView] = useState<string | null>(null);
   const [expandedCompose, setExpandedCompose] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [composeBank, setComposeBank] = useState<string>("");
+  const [balanceDraft, setBalanceDraft] = useState<Record<string, string>>({});
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState<
     "all" | "traffer" | "subscriber" | "admin"
@@ -379,6 +554,62 @@ function AdminPeopleTable({
                 </span>
               </div>
             </div>
+            <p className="tg-muted text-xs">
+              Баланс: {money(Number(u.balance ?? 0))}
+            </p>
+            {onAction && !isAdm ? (
+              <div className="flex gap-2 items-center flex-wrap">
+                <input
+                  className="tg-input flex-1 min-w-[100px]"
+                  type="number"
+                  placeholder="Новый баланс"
+                  disabled={disabled}
+                  value={balanceDraft[u.id] ?? ""}
+                  onChange={(e) =>
+                    setBalanceDraft((s) => ({
+                      ...s,
+                      [u.id]: e.target.value,
+                    }))
+                  }
+                />
+                <button
+                  type="button"
+                  className="tg-btn-secondary tg-btn-compact"
+                  disabled={
+                    disabled ||
+                    balanceDraft[u.id] === undefined ||
+                    balanceDraft[u.id] === ""
+                  }
+                  onClick={() => {
+                    const bal = Number(balanceDraft[u.id]);
+                    if (!Number.isFinite(bal) || bal < 0) {
+                      alert("Укажите корректный баланс ≥ 0");
+                      return;
+                    }
+                    if (
+                      !confirm(
+                        `Установить баланс ${money(bal)} для ${handle}?`
+                      )
+                    ) {
+                      return;
+                    }
+                    void onAction({
+                      action: "set_balance",
+                      userId: u.id,
+                      balance: bal,
+                    }).then(() =>
+                      setBalanceDraft((s) => {
+                        const next = { ...s };
+                        delete next[u.id];
+                        return next;
+                      })
+                    );
+                  }}
+                >
+                  Изменить баланс
+                </button>
+              </div>
+            ) : null}
 
             <div className="tg-people-block">
               <span className="tg-people-meta-label">
@@ -436,7 +667,18 @@ function AdminPeopleTable({
                   className="tg-btn-primary tg-btn-compact flex-1"
                   disabled={disabled}
                   onClick={() => {
-                    setExpandedCompose((cur) => (cur === u.id ? null : u.id));
+                    setExpandedCompose((cur) => {
+                      if (cur === u.id) return null;
+                      const banksLeft = Array.from(
+                        new Set(
+                          left
+                            .map((p) => (p.bank || "").trim())
+                            .filter(Boolean)
+                        )
+                      ).sort();
+                      setComposeBank(banksLeft[0] || "");
+                      return u.id;
+                    });
                     if (expandedView === u.id) setExpandedView(null);
                     setSelected((s) => ({ ...s, [u.id]: s[u.id] || [] }));
                   }}
@@ -447,80 +689,20 @@ function AdminPeopleTable({
             </div>
 
             {composing && !isAdm && left.length > 0 && onIssue ? (
-              <div className="tg-people-block mt-2 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="tg-people-meta-label">Выбор продуктов</span>
-                  <button
-                    type="button"
-                    className="tg-btn-secondary tg-btn-compact"
-                    disabled={disabled}
-                    onClick={() =>
-                      setSelected((s) => ({
-                        ...s,
-                        [u.id]:
-                          picked.length === left.length
-                            ? []
-                            : left.map((p) => p.id),
-                      }))
-                    }
-                  >
-                    {picked.length === left.length
-                      ? "Снять все"
-                      : "Выбрать все"}
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {left.map((p) => {
-                    const checked = picked.includes(p.id);
-                    return (
-                      <label
-                        key={p.id}
-                        className="flex items-center gap-2 text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={disabled}
-                          onChange={() =>
-                            setSelected((s) => {
-                              const cur = s[u.id] || [];
-                              return {
-                                ...s,
-                                [u.id]: checked
-                                  ? cur.filter((id) => id !== p.id)
-                                  : [...cur, p.id],
-                              };
-                            })
-                          }
-                        />
-                        <span className="truncate flex-1">
-                          {productLabel(p)}
-                        </span>
-                        <span className="tg-muted text-xs shrink-0">
-                          {money(p.reward)}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  className="tg-btn-primary w-full text-sm"
-                  disabled={disabled || picked.length === 0}
-                  onClick={() => {
-                    const ids =
-                      picked.length === left.length && left.length > 1
-                        ? ("all" as const)
-                        : picked;
-                    onIssue(u.id, ids);
-                    setSelected((s) => ({ ...s, [u.id]: [] }));
-                    setExpandedCompose(null);
-                  }}
-                >
-                  Оформить чек
-                  {picked.length > 0 ? ` (${picked.length})` : ""}
-                </button>
-              </div>
+              <ComposeCheckPanel
+                userId={u.id}
+                left={left}
+                picked={picked}
+                composeBank={composeBank}
+                setComposeBank={setComposeBank}
+                setSelected={setSelected}
+                disabled={disabled}
+                onIssue={onIssue}
+                onDone={() => {
+                  setSelected((s) => ({ ...s, [u.id]: [] }));
+                  setExpandedCompose(null);
+                }}
+              />
             ) : null}
 
             {!isAdm && left.length === 0 ? (
