@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/telegram";
 import { formatMoney } from "@/lib/bot/users";
+import { formatOrderNumber } from "@/lib/orderNumber";
 import {
   isAdminRefAttribution,
   resolveProductPayouts,
@@ -397,34 +398,45 @@ export async function setLeadStatus(opts: {
     }
   }
 
-  // Status DMs only on real transition; one short line each (no creditOnce spam)
-  if (
-    prev !== next &&
-    (next === "awaiting_payout" || next === "paid" || next === "rejected")
-  ) {
-    const productLabel = full.product.title;
+  // Status DMs on every real progress transition (client always; referrer selective)
+  if (prev !== next) {
+    const productLabel = full.product.bank
+      ? `${full.product.title} · ${full.product.bank}`
+      : full.product.title;
     const amountLabel = formatMoney(subAmount);
+    const orderCode = full.orderId
+      ? formatOrderNumber(full.orderId)
+      : null;
+    const orderPrefix = orderCode ? `Чек ${orderCode}\n` : "";
     let clientMsg = "";
-    if (next === "awaiting_payout") {
-      clientMsg = `✅ ${productLabel}: одобрено, ждём выплату ${amountLabel}`;
+    if (next === "processing") {
+      clientMsg =
+        `${orderPrefix}🔄 ${productLabel}: снова в обработке`;
+    } else if (next === "awaiting_payout") {
+      clientMsg =
+        `${orderPrefix}✅ ${productLabel}: одобрено, ждём выплату ${amountLabel}`;
     } else if (next === "paid") {
-      clientMsg = `💸 ${productLabel}: выплачено`;
-    } else {
+      clientMsg =
+        `${orderPrefix}💸 ${productLabel}: выплачено ${amountLabel}`;
+    } else if (next === "rejected") {
       const c = String(opts.comment || "").trim();
       clientMsg = c
-        ? `❌ ${productLabel}: отказ. ${c}`
-        : `❌ ${productLabel}: отказ.`;
+        ? `${orderPrefix}❌ ${productLabel}: отказ. ${c}`
+        : `${orderPrefix}❌ ${productLabel}: отказ.`;
     }
-    try {
-      await sendMessage(full.client.telegramId, clientMsg);
-    } catch {
-      /* blocked */
+    if (clientMsg) {
+      try {
+        await sendMessage(full.client.telegramId, clientMsg);
+      } catch {
+        /* blocked */
+      }
     }
 
     const notifyReferrer =
       !adminRef &&
       full.referrer &&
-      (full.referrer.role || "").toLowerCase() !== "admin";
+      (full.referrer.role || "").toLowerCase() !== "admin" &&
+      (next === "awaiting_payout" || next === "paid" || next === "rejected");
     if (notifyReferrer && full.referrer) {
       const handle = full.client.username
         ? `@${String(full.client.username).replace(/^@/, "")}`
@@ -568,10 +580,16 @@ export async function restoreOrderLine(opts: {
   });
 
   try {
+    const orderCode = full.orderId
+      ? formatOrderNumber(full.orderId)
+      : null;
     await sendMessage(
       full.client.telegramId,
-      `↩️ Позиция снова в вашем чеке: ${productLabel}.
-Статус: в обработке.`
+      (orderCode ? `Чек ${orderCode}
+` : "") +
+        `↩️ Позиция снова в вашем чеке: ${productLabel}.
+` +
+        `Статус: в обработке.`
     );
   } catch {
     /* blocked */
