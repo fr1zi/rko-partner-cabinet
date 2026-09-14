@@ -1111,6 +1111,27 @@ function AdminLeadLineControls({
         >
           Удалить из чека
         </button>
+        <button
+          type="button"
+          className="tg-btn-primary text-xs"
+          disabled={disabled || st !== "rejected"}
+          onClick={() => {
+            const note = String(
+              prompt("Заметка: почему вернули в чек (обязательно)") || ""
+            ).trim();
+            if (!note) {
+              alert("Нужна заметка — возврат отменён");
+              return;
+            }
+            void onAction({
+              action: "restore_order_line",
+              leadId: l.id,
+              note,
+            });
+          }}
+        >
+          Вернуть в чек
+        </button>
       </div>
     </div>
   );

@@ -524,3 +524,72 @@ export async function removeOrderLine(opts: {
   await maybeAutoReleaseOrder(full.orderId);
   return { ok: true as const };
 }
+
+/**
+ * Return a removed/rejected line back into the чек as processing.
+ * Requires admin note (stored in adminComment).
+ */
+export async function restoreOrderLine(opts: {
+  leadId: string;
+  note: string;
+}) {
+  await ensureHoldColumn();
+  const note = String(opts.note || "").trim();
+  if (!note) {
+    return { error: "укажите заметку" as const };
+  }
+
+  const full = await prisma.botLead.findUnique({
+    where: { id: opts.leadId },
+    include: { product: true, client: true, referrer: true },
+  });
+  if (!full) return { error: "not found" as const };
+
+  const prev = normalizeLeadStatus(full.status);
+  if (prev !== "rejected") {
+    return { error: "вернуть можно только отклонённую / удалённую позицию" as const };
+  }
+
+  const productLabel = full.product.bank
+    ? `${full.product.title} · ${full.product.bank}`
+    : full.product.title;
+  const comment = `Возвращено в чек: ${note}`;
+
+  await prisma.botLead.update({
+    where: { id: full.id },
+    data: {
+      status: "processing",
+      adminComment: comment,
+      holdUntilOrderComplete: false,
+      subscriberAmount: null,
+      premiumAmount: null,
+      approvedAt: null,
+    },
+  });
+
+  try {
+    await sendMessage(
+      full.client.telegramId,
+      `↩️ Позиция снова в вашем чеке: ${productLabel}.
+Статус: в обработке.`
+    );
+  } catch {
+    /* blocked */
+  }
+
+  if (full.referrer) {
+    try {
+      const handle = full.client.username
+        ? `@${String(full.client.username).replace(/^@/, "")}`
+        : full.client.telegramId;
+      await sendMessage(
+        full.referrer.telegramId,
+        `↩️ Реферал ${handle}: ${productLabel} вернули в чек.`
+      );
+    } catch {
+      /* blocked */
+    }
+  }
+
+  return { ok: true as const };
+}
