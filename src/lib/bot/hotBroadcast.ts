@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { formatMoney } from "@/lib/bot/users";
 import { sendMessage, getMiniAppUrl } from "@/lib/telegram";
 import { escapeTgHtml } from "@/lib/bot/orders";
+import { isKnownBank } from "@/lib/banks";
 
 export type HotProductLike = {
   id: string;
@@ -15,26 +16,27 @@ export type HotProductLike = {
   isActive?: boolean;
 };
 
-/** Broadcast a HOT offer to all non-banned bot users (subscribers + traffers). */
+/**
+ * Broadcast HOT for any product — bank partners and «Другое» offers alike.
+ * Sent to all non-banned subscribers + traffers.
+ */
 export async function broadcastHotOffer(
   product: HotProductLike
 ): Promise<{ sent: number; failed: number }> {
-  if (!product?.isActive && product.isActive !== undefined) {
-    // still allow if just created active
-  }
-  const title = escapeTgHtml(product.title || "Оффер");
+  const title = escapeTgHtml(product.title || "Предложение");
   const bank = String(product.bank || "").trim();
-  const cat = bank ? escapeTgHtml(bank) : "";
   const hot = escapeTgHtml(product.hotText || "HOT");
   const desc = String(product.description || "").trim();
   const sub = Number(product.subscriberPrice || 0);
   const prem = Number(product.reward || 0);
+  const placeLabel = isKnownBank(bank) ? "Банк" : "Категория";
+  const place = bank ? escapeTgHtml(bank) : "";
 
   const lines = [
-    `🔥 <b>Горящий оффер</b> · ${hot}`,
+    `🔥 <b>Горящее предложение</b> · ${hot}`,
     "",
     `<b>${title}</b>`,
-    cat ? `Категория: ${cat}` : "",
+    place ? `${placeLabel}: ${place}` : "",
     desc ? escapeTgHtml(desc) : "",
     "",
     sub > 0 ? `Подписчику: <b>${formatMoney(sub)}</b>` : "",
@@ -73,7 +75,6 @@ export async function broadcastHotOffer(
     } catch {
       failed++;
     }
-    // soft throttle for Telegram flood limits
     if ((sent + failed) % 25 === 0) {
       await new Promise((r) => setTimeout(r, 350));
     }
