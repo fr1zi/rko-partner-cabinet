@@ -3,13 +3,14 @@ import { prisma } from "@/lib/prisma";
 
 export { formatOrderNumber } from "@/lib/orderNumber";
 
-/** Searchable short code: RKO-YYMM-XXXX (prefix + year/month + 4 hex). */
+/** Searchable short code: digits only YYMM + 6 random digits. */
 function createId() {
   const d = new Date();
   const yy = String(d.getFullYear() % 100).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const suffix = randomBytes(2).toString("hex").toUpperCase();
-  return `RKO-${yy}${mm}-${suffix}`;
+  const n = randomBytes(3).readUIntBE(0, 3) % 1_000_000;
+  const suffix = String(n).padStart(6, "0");
+  return `${yy}${mm}${suffix}`;
 }
 
 async function ensureOrderIdColumn() {

@@ -965,7 +965,7 @@ function isRemovedFromCheck(l: AdminLeadRow) {
 }
 
 
-function leadSubscriberAmt(l: AdminLeadRow): number {
+function leadLineSplit(l: AdminLeadRow) {
   const adminRefResolved =
     isAdminRefAttribution({
       referrerId: l.referrerId ?? null,
@@ -982,8 +982,21 @@ function leadSubscriberAmt(l: AdminLeadRow): number {
     split.legacy &&
     rawSub != null &&
     Math.abs(Number(rawSub) - split.bankCpa) < 0.01;
-  if (rawSub != null && rawSub > 0 && !looksLikeLegacyCpa) return Number(rawSub);
-  return split.subscriber;
+  const subscriber =
+    rawSub != null && rawSub > 0 && !looksLikeLegacyCpa
+      ? Number(rawSub)
+      : split.subscriber;
+  const traffer = adminRefResolved
+    ? 0
+    : l.premiumAmount != null && l.premiumAmount > 0
+      ? Number(l.premiumAmount)
+      : split.traffer;
+  const owner = ownerMarginFromPayouts(subscriber, traffer);
+  return { subscriber, traffer, owner, adminRefResolved };
+}
+
+function leadOwnerProfit(l: AdminLeadRow): number {
+  return leadLineSplit(l).owner;
 }
 
 function AdminLeadLineControls({
@@ -1404,31 +1417,11 @@ function AdminLeadsPanel({
   const [statusFilter, setStatusFilter] = useState<
     "processing" | "awaiting_payout" | "paid" | "rejected"
   >("processing");
-  const [bankFilter, setBankFilter] = useState<string>("");
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
   const [restorePanelOrderId, setRestorePanelOrderId] = useState<string | null>(
     null
   );
-
-  const banks = useMemo(() => {
-    const set = new Set<string>();
-    for (const l of leads) {
-      const b = (l.product.bank || "").trim();
-      if (b) set.add(b);
-    }
-    return Array.from(set).sort();
-  }, [leads]);
-
-  useEffect(() => {
-    if (banks.length === 0) {
-      if (bankFilter) setBankFilter("");
-      return;
-    }
-    if (!bankFilter || !banks.includes(bankFilter)) {
-      setBankFilter(banks[0]);
-    }
-  }, [banks, bankFilter]);
 
   const filteredLeads = useMemo(() => {
     return leads.filter((l) => {
@@ -1442,13 +1435,9 @@ function AdminLeadsPanel({
       if (q.trim() && !userHit && !orderHit) return false;
       const st = normalizeLeadSt(l.status);
       if (st !== statusFilter) return false;
-      if (bankFilter) {
-        const b = (l.product.bank || "").trim();
-        if (b !== bankFilter) return false;
-      }
       return true;
     });
-  }, [leads, q, statusFilter, bankFilter]);
+  }, [leads, q, statusFilter]);
 
   const groups = useMemo(() => {
     // Keep full чек together: include sibling lines of the same orderId
@@ -1531,7 +1520,7 @@ function AdminLeadsPanel({
       </p>
       <input
         className="tg-input"
-        placeholder="Поиск @username или номер чека"
+        placeholder="Поиск @username или код чека"
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
@@ -1549,22 +1538,6 @@ function AdminLeadsPanel({
           </button>
         ))}
       </div>
-      {banks.length > 0 ? (
-        <div className="tg-admin-chips">
-          {banks.map((b) => (
-            <button
-              key={b}
-              type="button"
-              className={
-                bankFilter === b ? "tg-chip tg-chip-active" : "tg-chip"
-              }
-              onClick={() => setBankFilter(b)}
-            >
-              {b}
-            </button>
-          ))}
-        </div>
-      ) : null}
       {filteredIds.length > 0 ? (
         <label className="flex items-center gap-2 text-sm px-1">
           <input
@@ -1646,11 +1619,11 @@ function AdminLeadsPanel({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <p className="text-sm font-medium">
-                      Итог чека:{" "}
+                      Итог · прибыль:{" "}
                       <span className="tabular-nums">
                         {money(
                           mainLines.reduce(
-                            (sum, line) => sum + leadSubscriberAmt(line),
+                            (sum, line) => sum + leadOwnerProfit(line),
                             0
                           )
                         )}
