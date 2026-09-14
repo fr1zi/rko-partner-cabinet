@@ -158,7 +158,7 @@ export function HomeTab({
             ]}
           />
           <ProfitBars
-            title="Прибыль компании"
+            title="Прибыль компании (одобрено + выплачено)"
             bars={[
               {
                 label: "За день",

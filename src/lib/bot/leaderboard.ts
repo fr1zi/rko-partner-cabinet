@@ -287,10 +287,16 @@ export async function getCompanyProfit(opts?: {
 export async function getCompanyProfitDayMonth() {
   const day = moscowTodayBounds();
   const month = moscowMonthBounds();
+  // Same basis for all buckets: paid + awaiting_payout (owner margin).
+  // Otherwise «всего» (paid-only) can be lower than day/month — looks broken.
   const [today, monthP, all] = await Promise.all([
-    getCompanyProfit({ start: day.start, end: day.end }),
-    getCompanyProfit({ start: month.start, end: month.end }),
-    getCompanyProfit({ includeAwaiting: false }),
+    getCompanyProfit({ start: day.start, end: day.end, includeAwaiting: true }),
+    getCompanyProfit({
+      start: month.start,
+      end: month.end,
+      includeAwaiting: true,
+    }),
+    getCompanyProfit({ includeAwaiting: true }),
   ]);
   return {
     today: today.companyProfit,
