@@ -26,6 +26,7 @@ import {
   resetLeaderboardPeriod,
   metaFromSettings,
 } from "@/lib/bot/leaderboard";
+import { buildTaxReportDocx } from "@/lib/bot/taxDocx";
 import { createProductOrder } from "@/lib/bot/orders";
 import { ensureHoldColumn } from "@/lib/bot/leads";
 
@@ -77,6 +78,23 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json({ withdrawals });
   }
+  if (tab === "tax_docx") {
+    const monthParam =
+      req.nextUrl.searchParams.get("month") || currentYearMonth();
+    const taxReport = await getTaxReport(monthParam);
+    const buf = await buildTaxReportDocx(taxReport);
+    const filename = `reestr-${taxReport.month}.docx`;
+    return new NextResponse(new Uint8Array(buf), {
+      status: 200,
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
   if (tab === "users") {
     await ensureHoldColumn();
     const [users, products, subscribers] = await Promise.all([

@@ -472,6 +472,23 @@ function downloadTaxCsv(report: TaxReportState) {
   URL.revokeObjectURL(url);
 }
 
+async function downloadTaxDocx(month: string) {
+  const res = await fetch(
+    `/api/tg/bot-admin?tab=tax_docx&month=${encodeURIComponent(month)}`,
+    { credentials: "include" }
+  );
+  if (!res.ok) {
+    throw new Error(`Не удалось скачать Word (${res.status})`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `reestr-${month}.docx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function printTaxReport(report: TaxReportState) {
   const s = report.summary;
   const period = monthTitleRu(report.month);
@@ -617,6 +634,7 @@ function TaxReportPanel({
   );
   const [report, setReport] = useState<TaxReportState | null>(initial);
   const [loading, setLoading] = useState(false);
+  const [docxLoading, setDocxLoading] = useState(false);
 
   useEffect(() => {
     if (initial?.month === month) {
@@ -667,7 +685,7 @@ function TaxReportPanel({
         <div>
           <h3 className="tg-section-label">Бумажный отчёт</h3>
           <p className="tg-muted text-xs mt-1">
-            Реестр для бухгалтерии / налоговой. Печать и CSV.
+            Реестр для бухгалтерии / налоговой. Печать, CSV и Word.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -695,6 +713,28 @@ function TaxReportPanel({
             onClick={() => report && downloadTaxCsv(report)}
           >
             Скачать CSV
+          </button>
+          <button
+            type="button"
+            className="tg-btn-secondary text-sm"
+            disabled={!report || docxLoading}
+            onClick={async () => {
+              setDocxLoading(true);
+              try {
+                await downloadTaxDocx(month);
+              } catch (e) {
+                console.error(e);
+                alert(
+                  e instanceof Error
+                    ? e.message
+                    : "Не удалось скачать Word"
+                );
+              } finally {
+                setDocxLoading(false);
+              }
+            }}
+          >
+            {docxLoading ? "Word…" : "Скачать Word"}
           </button>
           {loading ? (
             <span className="tg-muted text-xs self-center">Обновление…</span>
