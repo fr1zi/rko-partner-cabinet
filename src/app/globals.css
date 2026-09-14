@@ -993,3 +993,62 @@ body {
     rgba(7, 11, 18, 1) 100%
   );
 }
+
+/* Tax report — paper document look inside dark Mini App */
+.tg-tax-paper {
+  background: #f7f4ee;
+  color: #1a1a1a;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.tg-tax-paper h3,
+.tg-tax-paper h4 {
+  color: #111;
+}
+.tg-tax-doc-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tg-tax-meta {
+  font-size: 12px;
+  color: #444;
+}
+.tg-tax-summary,
+.tg-tax-register {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.tg-tax-summary th,
+.tg-tax-summary td,
+.tg-tax-register th,
+.tg-tax-register td {
+  border: 1px solid #c9c2b4;
+  padding: 6px 8px;
+}
+.tg-tax-summary th,
+.tg-tax-register th {
+  background: #ebe6dc;
+  text-align: left;
+  font-weight: 600;
+}
+.tg-tax-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tg-tax-sign {
+  margin-top: 20px;
+  font-size: 12px;
+  color: #333;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tg-tax-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}

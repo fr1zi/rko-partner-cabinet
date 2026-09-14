@@ -368,23 +368,83 @@ function defaultYearMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function monthTitleRu(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  const months = [
+    "январь",
+    "февраль",
+    "март",
+    "апрель",
+    "май",
+    "июнь",
+    "июль",
+    "август",
+    "сентябрь",
+    "октябрь",
+    "ноябрь",
+    "декабрь",
+  ];
+  const mi = (m || 1) - 1;
+  const name = months[mi] ?? ym;
+  return `${name} ${y || ""} г.`.trim();
+}
+
+function formatTaxDate(value: string) {
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const [y, mo, d] = value.slice(0, 10).split("-");
+    return `${d}.${mo}.${y}`;
+  }
+  try {
+    const dt = new Date(value);
+    if (!Number.isNaN(dt.getTime())) {
+      const dd = String(dt.getDate()).padStart(2, "0");
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const yy = dt.getFullYear();
+      return `${dd}.${mm}.${yy}`;
+    }
+  } catch {
+    /* keep raw */
+  }
+  return value;
+}
+
+function refSourceLabel(refType: "admin" | "traffer") {
+  return refType === "admin" ? "Админ" : "Траффер";
+}
+
+function escapeHtml(s: string) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function generatedTodayRu() {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = d.getFullYear();
+  return `${dd}.${mm}.${yy}`;
+}
+
 function downloadTaxCsv(report: TaxReportState) {
   const header = [
-    "date",
-    "orderId",
-    "client",
-    "product",
-    "bank_cpa",
-    "subscriber_payout",
-    "traffer_payout",
-    "company_profit",
-    "status",
-    "ref_type",
+    "Дата",
+    "Чек",
+    "Клиент",
+    "Продукт",
+    "CPA",
+    "Выплата_подписчику",
+    "Выплата_трафферу",
+    "Прибыль_компании",
+    "Статус",
+    "Источник_рефки",
   ];
   const lines = [header.join(",")];
   for (const r of report.rows) {
     const cells = [
-      r.date,
+      formatTaxDate(r.date),
       r.orderId || "",
       r.client,
       r.product,
@@ -392,8 +452,8 @@ function downloadTaxCsv(report: TaxReportState) {
       String(r.subscriberPayout),
       String(r.trafferPayout),
       String(r.companyProfit),
-      r.status,
-      r.refType,
+      statusLabel(r.status),
+      refSourceLabel(r.refType),
     ].map((c) => {
       const s = String(c);
       if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
@@ -407,9 +467,144 @@ function downloadTaxCsv(report: TaxReportState) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `tax-report-${report.month}.csv`;
+  a.download = `reestr-${report.month}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function printTaxReport(report: TaxReportState) {
+  const s = report.summary;
+  const period = monthTitleRu(report.month);
+  const generated = generatedTodayRu();
+  const totals = report.rows.reduce(
+    (acc, r) => {
+      acc.cpa += r.bankCpa;
+      acc.sub += r.subscriberPayout;
+      acc.traf += r.trafferPayout;
+      acc.comp += r.companyProfit;
+      return acc;
+    },
+    { cpa: 0, sub: 0, traf: 0, comp: 0 }
+  );
+
+  const summaryRows: Array<[string, string]> = [
+    ["Оборот (банковский CPA)", money(s.bankCpa)],
+    ["Выплаты подписчикам", money(s.subscriberPayouts)],
+    ["Выплаты трафферам", money(s.trafferPayouts)],
+    ["Прибыль компании", money(s.companyProfit)],
+    ["в т.ч. рефка админов (55%)", money(s.adminRefOwner)],
+    ["Выплаченные выводы", money(s.withdrawalsPaid)],
+    ["Количество позиций", String(s.paidPositions)],
+  ];
+
+  const summaryHtml = summaryRows
+    .map(
+      ([k, v]) =>
+        `<tr><th>${escapeHtml(k)}</th><td class="num">${escapeHtml(v)}</td></tr>`
+    )
+    .join("");
+
+  const bodyRows = report.rows
+    .map(
+      (r, i) => `<tr>
+      <td>${i + 1}</td>
+      <td>${escapeHtml(formatTaxDate(r.date))}</td>
+      <td>${escapeHtml(r.client)}</td>
+      <td>${escapeHtml(r.product)}</td>
+      <td>${escapeHtml(r.orderId || "—")}</td>
+      <td class="num">${escapeHtml(money(r.bankCpa))}</td>
+      <td class="num">${escapeHtml(money(r.subscriberPayout))}</td>
+      <td class="num">${escapeHtml(money(r.trafferPayout))}</td>
+      <td class="num">${escapeHtml(money(r.companyProfit))}</td>
+      <td>${escapeHtml(refSourceLabel(r.refType))}</td>
+      <td>${escapeHtml(statusLabel(r.status))}</td>
+    </tr>`
+    )
+    .join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<title>Реестр операций — ${escapeHtml(period)}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    color: #000;
+    background: #fff;
+    margin: 0;
+    padding: 0;
+    font-size: 11pt;
+    line-height: 1.35;
+  }
+  h1 {
+    font-size: 14pt;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin: 0 0 6px;
+    text-align: center;
+  }
+  .meta { font-size: 10pt; color: #222; margin: 2px 0; text-align: center; }
+  .note { font-size: 9pt; color: #444; margin: 10px 0 14px; text-align: center; }
+  h2 { font-size: 11pt; margin: 16px 0 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  th, td { border: 1px solid #333; padding: 4px 6px; vertical-align: top; }
+  th { background: #eee; text-align: left; font-weight: 600; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sign { margin-top: 28px; font-size: 10pt; display: flex; justify-content: space-between; gap: 24px; }
+  .brand { font-size: 9pt; color: #555; text-align: center; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <h1>Реестр операций за месяц</h1>
+  <p class="meta">Период: ${escapeHtml(period)}</p>
+  <p class="meta">Сформирован: ${escapeHtml(generated)}</p>
+  <p class="brand">РКО · партнёрский кабинет</p>
+  <p class="note">Документ для внутреннего учёта и подготовки отчётности. Суммы в рублях.</p>
+
+  <h2>Сводка</h2>
+  <table>
+    <tbody>${summaryHtml}</tbody>
+  </table>
+
+  <h2>Реестр</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>№</th><th>Дата</th><th>Клиент</th><th>Продукт</th><th>Чек</th>
+        <th>CPA</th><th>Подписчику</th><th>Трафферу</th><th>Компании</th>
+        <th>Источник</th><th>Статус</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${bodyRows || `<tr><td colspan="11">Нет позиций за выбранный месяц</td></tr>`}
+      <tr>
+        <th colspan="5">Итого</th>
+        <td class="num"><strong>${escapeHtml(money(totals.cpa))}</strong></td>
+        <td class="num"><strong>${escapeHtml(money(totals.sub))}</strong></td>
+        <td class="num"><strong>${escapeHtml(money(totals.traf))}</strong></td>
+        <td class="num"><strong>${escapeHtml(money(totals.comp))}</strong></td>
+        <td colspan="2"></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="sign">
+    <span>Ответственный _______________</span>
+    <span>Дата _______________</span>
+  </div>
+  <script>window.onload = function () { window.print(); };</script>
+</body>
+</html>`;
+
+  const w = window.open("", "_blank", "noopener,noreferrer");
+  if (!w) return;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
 function TaxReportPanel({
@@ -449,25 +644,62 @@ function TaxReportPanel({
   }, [month, initial]);
 
   const s = report?.summary;
+  const periodTitle = monthTitleRu(month);
+  const generated = generatedTodayRu();
+
+  const totals = useMemo(() => {
+    const rows = report?.rows || [];
+    return rows.reduce(
+      (acc, r) => {
+        acc.cpa += r.bankCpa;
+        acc.sub += r.subscriberPayout;
+        acc.traf += r.trafferPayout;
+        acc.comp += r.companyProfit;
+        return acc;
+      },
+      { cpa: 0, sub: 0, traf: 0, comp: 0 }
+    );
+  }, [report]);
 
   return (
     <section className="tg-stack">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 className="tg-section-label">Отчёт за месяц</h3>
+          <h3 className="tg-section-label">Бумажный отчёт</h3>
           <p className="tg-muted text-xs mt-1">
-            Для бухгалтерии / налоговой. Оплаченные и «ждём выплату».
+            Реестр для бухгалтерии / налоговой. Печать и CSV.
           </p>
         </div>
-        <label className="block space-y-1">
-          <span className="tg-muted text-xs">Месяц</span>
-          <input
-            className="tg-input"
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-          />
-        </label>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="block space-y-1">
+            <span className="tg-muted text-xs">Месяц</span>
+            <input
+              className="tg-input"
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="tg-btn-primary text-sm"
+            disabled={!report || !s}
+            onClick={() => report && printTaxReport(report)}
+          >
+            Печать / PDF
+          </button>
+          <button
+            type="button"
+            className="tg-btn-secondary text-sm"
+            disabled={!report || report.rows.length === 0}
+            onClick={() => report && downloadTaxCsv(report)}
+          >
+            Скачать CSV
+          </button>
+          {loading ? (
+            <span className="tg-muted text-xs self-center">Обновление…</span>
+          ) : null}
+        </div>
       </div>
 
       {loading && !report ? (
@@ -475,98 +707,117 @@ function TaxReportPanel({
       ) : !s ? (
         <div className="tg-empty">Нет данных за месяц</div>
       ) : (
-        <>
-          <div className="tg-stat-grid">
-            <StatTile
-              label="Банковский CPA / оборот"
-              value={s.bankCpaLabel}
-              wide
-            />
-            <StatTile
-              label="Выплаты подписчикам"
-              value={s.subscriberPayoutsLabel}
-            />
-            <StatTile
-              label="Выплаты трафферам"
-              value={s.trafferPayoutsLabel}
-            />
-            <StatTile
-              label="Прибыль компании"
-              value={s.companyProfitLabel}
-              wide
-            />
-            <StatTile
-              label="Оплаченных позиций"
-              value={String(s.paidPositions)}
-            />
-            <StatTile
-              label="Выводы выплаченные"
-              value={s.withdrawalsPaidLabel}
-            />
-            <StatTile
-              label="Рефка админов (нам 55%)"
-              value={s.adminRefOwnerLabel}
-              wide
-            />
-          </div>
+        <div className="tg-tax-paper">
+          <div className="tg-tax-doc-title">Реестр операций за месяц</div>
+          <p className="tg-tax-meta">Период: {periodTitle}</p>
+          <p className="tg-tax-meta">Сформирован: {generated}</p>
+          <p className="tg-tax-meta">РКО · партнёрский кабинет</p>
+          <p className="tg-tax-meta" style={{ marginTop: 8 }}>
+            Документ для внутреннего учёта и подготовки отчётности. Суммы в
+            рублях.
+          </p>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="tg-btn-primary text-sm"
-              disabled={!report || report.rows.length === 0}
-              onClick={() => report && downloadTaxCsv(report)}
-            >
-              Скачать CSV
-            </button>
-            {loading ? (
-              <span className="tg-muted text-xs self-center">Обновление…</span>
-            ) : null}
-          </div>
+          <h4 style={{ margin: "14px 0 8px" }}>Сводка</h4>
+          <table className="tg-tax-summary">
+            <tbody>
+              <tr>
+                <th>Оборот (банковский CPA)</th>
+                <td className="tg-tax-num">{money(s.bankCpa)}</td>
+              </tr>
+              <tr>
+                <th>Выплаты подписчикам</th>
+                <td className="tg-tax-num">{money(s.subscriberPayouts)}</td>
+              </tr>
+              <tr>
+                <th>Выплаты трафферам</th>
+                <td className="tg-tax-num">{money(s.trafferPayouts)}</td>
+              </tr>
+              <tr>
+                <th>Прибыль компании</th>
+                <td className="tg-tax-num">{money(s.companyProfit)}</td>
+              </tr>
+              <tr>
+                <th>в т.ч. рефка админов (55%)</th>
+                <td className="tg-tax-num">{money(s.adminRefOwner)}</td>
+              </tr>
+              <tr>
+                <th>Выплаченные выводы</th>
+                <td className="tg-tax-num">{money(s.withdrawalsPaid)}</td>
+              </tr>
+              <tr>
+                <th>Количество позиций</th>
+                <td className="tg-tax-num">{s.paidPositions}</td>
+              </tr>
+            </tbody>
+          </table>
 
+          <h4 style={{ margin: "14px 0 8px" }}>Реестр</h4>
           {report && report.rows.length > 0 ? (
-            <div
-              className="tg-table-wrap"
-              style={{ maxHeight: 360, overflowY: "auto" }}
-            >
-              <table className="tg-table">
+            <div className="tg-tax-scroll">
+              <table className="tg-tax-register">
                 <thead>
                   <tr>
+                    <th>№</th>
                     <th>Дата</th>
                     <th>Клиент</th>
                     <th>Продукт</th>
+                    <th>Чек</th>
                     <th>CPA</th>
-                    <th>Подп.</th>
-                    <th>Траф</th>
-                    <th>Нам</th>
+                    <th>Подписчику</th>
+                    <th>Трафферу</th>
+                    <th>Компании</th>
+                    <th>Источник</th>
                     <th>Статус</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {report.rows.map((r) => (
+                  {report.rows.map((r, i) => (
                     <tr key={r.id}>
-                      <td>{r.date}</td>
-                      <td>
-                        {r.client}
-                        {r.refType === "admin" ? (
-                          <span className="tg-muted"> · адм</span>
-                        ) : null}
-                      </td>
+                      <td>{i + 1}</td>
+                      <td>{formatTaxDate(r.date)}</td>
+                      <td>{r.client}</td>
                       <td>{r.product}</td>
-                      <td>{r.bankCpa}</td>
-                      <td>{r.subscriberPayout}</td>
-                      <td>{r.trafferPayout}</td>
-                      <td>{r.companyProfit}</td>
+                      <td>{r.orderId || "—"}</td>
+                      <td className="tg-tax-num">{money(r.bankCpa)}</td>
+                      <td className="tg-tax-num">
+                        {money(r.subscriberPayout)}
+                      </td>
+                      <td className="tg-tax-num">{money(r.trafferPayout)}</td>
+                      <td className="tg-tax-num">{money(r.companyProfit)}</td>
+                      <td>{refSourceLabel(r.refType)}</td>
                       <td>{statusLabel(r.status)}</td>
                     </tr>
                   ))}
+                  <tr>
+                    <th colSpan={5}>Итого</th>
+                    <td className="tg-tax-num">
+                      <strong>{money(totals.cpa)}</strong>
+                    </td>
+                    <td className="tg-tax-num">
+                      <strong>{money(totals.sub)}</strong>
+                    </td>
+                    <td className="tg-tax-num">
+                      <strong>{money(totals.traf)}</strong>
+                    </td>
+                    <td className="tg-tax-num">
+                      <strong>{money(totals.comp)}</strong>
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
                 </tbody>
               </table>
             </div>
           ) : (
-            <div className="tg-empty">Нет позиций за выбранный месяц</div>
+            <div className="tg-empty" style={{ color: "#444" }}>
+              Нет позиций за выбранный месяц
+            </div>
           )}
-        </>
+
+          <div className="tg-tax-sign">
+            <span>Ответственный _______________</span>
+            <span>Дата _______________</span>
+          </div>
+        </div>
       )}
     </section>
   );
