@@ -361,25 +361,7 @@ function AdminPeopleTable({
   const [issuesFilter, setIssuesFilter] = useState<"all" | "has" | "none">(
     "all"
   );
-  const [bankFilter, setBankFilter] = useState<string>("all");
 
-  const banks = useMemo(() => {
-    const set = new Set<string>();
-    for (const u of people) {
-      for (const iss of u.issues || []) {
-        const parts = String(iss.product || "").split(" · ");
-        if (parts.length > 1) {
-          const b = parts[parts.length - 1].trim();
-          if (b) set.add(b);
-        }
-      }
-      for (const p of products) {
-        const b = (p.bank || "").trim();
-        if (b) set.add(b);
-      }
-    }
-    return Array.from(set).sort();
-  }, [people, products]);
 
   const filtered = useMemo(() => {
     return people.filter((u) => {
@@ -399,20 +381,9 @@ function AdminPeopleTable({
       const issues = u.issues || [];
       if (issuesFilter === "has" && issues.length === 0) return false;
       if (issuesFilter === "none" && issues.length > 0) return false;
-      if (bankFilter !== "all") {
-        const hasBank = issues.some((iss) => {
-          const label = String(iss.product || "");
-          return (
-            label.includes(` · ${bankFilter}`) ||
-            label.endsWith(bankFilter) ||
-            label.includes(bankFilter)
-          );
-        });
-        if (!hasBank) return false;
-      }
       return true;
     });
-  }, [people, q, roleFilter, issuesFilter, bankFilter]);
+  }, [people, q, roleFilter, issuesFilter]);
 
   if (loading && people.length === 0) {
     return <div className="tg-empty">Загрузка таблицы…</div>;
@@ -482,31 +453,6 @@ function AdminPeopleTable({
           </button>
         ))}
       </div>
-      {banks.length > 0 ? (
-        <div className="tg-admin-chips">
-          <button
-            type="button"
-            className={
-              bankFilter === "all" ? "tg-chip tg-chip-active" : "tg-chip"
-            }
-            onClick={() => setBankFilter("all")}
-          >
-            Все банки
-          </button>
-          {banks.map((b) => (
-            <button
-              key={b}
-              type="button"
-              className={
-                bankFilter === b ? "tg-chip tg-chip-active" : "tg-chip"
-              }
-              onClick={() => setBankFilter(b)}
-            >
-              {b}
-            </button>
-          ))}
-        </div>
-      ) : null}
       {filtered.length === 0 ? (
         <div className="tg-empty">Никого по фильтру</div>
       ) : null}
