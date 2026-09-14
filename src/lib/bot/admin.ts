@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { broadcastHotOffer } from "@/lib/bot/hotBroadcast";
 import {
   sendMessage,
   editMessage,
@@ -914,7 +915,7 @@ export async function handleAdminText(
       Number.isFinite(days) && days > 0
         ? new Date(Date.now() + days * 86400000)
         : null;
-    await prisma.botProduct.update({
+    const updated = await prisma.botProduct.update({
       where: { id: productId },
       data: {
         isHot: true,
@@ -922,8 +923,12 @@ export async function handleAdminText(
         hotUntil,
       },
     });
+    const broadcast = await broadcastHotOffer(updated);
     await clearScene(telegramId);
-    await sendMessage(chatId, "Горящий оффер установлен.");
+    await sendMessage(
+      chatId,
+      `Горящий оффер установлен. Рассылка: ${broadcast.sent} ок, ${broadcast.failed} ошибок.`
+    );
     return true;
   }
 

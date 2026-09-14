@@ -17,6 +17,7 @@ import {
 } from "@/lib/telegram";
 import { refLinkFor } from "@/lib/bot/users";
 import { setLeadStatus, removeOrderLine, restoreOrderLine } from "@/lib/bot/leads";
+import { broadcastHotOffer } from "@/lib/bot/hotBroadcast";
 import {
   getCompanyProfitDayMonth,
   getTrafferLeaderboard,
@@ -300,7 +301,11 @@ export async function POST(req: NextRequest) {
             : null,
       },
     });
-    return NextResponse.json({ ok: true, product: p });
+    let broadcast: { sent: number; failed: number } | null = null;
+    if (isHot) {
+      broadcast = await broadcastHotOffer(p);
+    }
+    return NextResponse.json({ ok: true, product: p, broadcast });
   }
 
   if (action === "product_update") {
@@ -358,15 +363,23 @@ export async function POST(req: NextRequest) {
     const days = Number(body.days) || 0;
     const hotUntil =
       days > 0 ? new Date(Date.now() + days * 86400000) : null;
+    const turningOn = Boolean(body.isHot);
+    const prev = await prisma.botProduct.findUnique({ where: { id } });
+    if (!prev) return NextResponse.json({ error: "not found" }, { status: 404 });
     const updated = await prisma.botProduct.update({
       where: { id },
       data: {
-        isHot: Boolean(body.isHot),
+        isHot: turningOn,
         hotText: body.hotText ? String(body.hotText) : null,
-        hotUntil,
+        hotUntil: turningOn ? hotUntil : null,
       },
     });
-    return NextResponse.json({ ok: true, product: updated });
+    let broadcast: { sent: number; failed: number } | null = null;
+    // Hot mailing only when HOT is newly turned on
+    if (turningOn && !prev.isHot) {
+      broadcast = await broadcastHotOffer(updated);
+    }
+    return NextResponse.json({ ok: true, product: updated, broadcast });
   }
 
   if (
