@@ -31,6 +31,8 @@ export type AdminProductOpt = {
   title: string;
   bank?: string;
   reward: number;
+  /** Subscriber payout — same as shop catalog price */
+  subscriberPrice?: number;
 };
 
 type IssueLine = NonNullable<AdminPerson["issues"]>[number];
@@ -287,7 +289,11 @@ function ComposeCheckPanel({
                 />
                 <span className="truncate flex-1">{p.title}</span>
                 <span className="tg-muted text-xs shrink-0">
-                  {money(p.reward)}
+                  {money(
+                    p.subscriberPrice != null && p.subscriberPrice > 0
+                      ? p.subscriberPrice
+                      : p.reward
+                  )}
                 </span>
               </label>
             );

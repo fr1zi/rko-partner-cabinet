@@ -125,7 +125,13 @@ export async function GET(req: NextRequest) {
       prisma.botProduct.findMany({
         where: { isActive: true },
         orderBy: { createdAt: "asc" },
-        select: { id: true, title: true, bank: true, reward: true },
+        select: {
+          id: true,
+          title: true,
+          bank: true,
+          reward: true,
+          subscriberPrice: true,
+        },
       }),
       prisma.subscriber.findMany({
         select: {
