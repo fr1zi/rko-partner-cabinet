@@ -93,6 +93,14 @@ export type CabinetData = {
     earnedLabel: string;
     leadsPaid: number;
   }>;
+  leaderboardMeta?: {
+    speech: string;
+    prize: string;
+    periodDays: number;
+    periodStart: string;
+    periodEndsAt: string | null;
+    daysLeft: number | null;
+  } | null;
 };
 
 export type PartnerTab = "home" | "products" | "premiums" | "people" | "withdraw";

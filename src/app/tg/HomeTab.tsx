@@ -92,7 +92,7 @@ export function HomeTab({
         </section>
         <section>
           <h2 className="tg-section-label">Лидерборд трафферов</h2>
-          <LeaderboardList rows={data.leaderboard} limit={10} />
+          <LeaderboardList rows={data.leaderboard} meta={data.leaderboardMeta} limit={10} />
         </section>
         <a
           className="tg-btn-secondary w-full text-center"
@@ -278,6 +278,7 @@ export function HomeTab({
         <h2 className="tg-section-label">Лидерборд</h2>
         <LeaderboardList
           rows={data.leaderboard}
+          meta={data.leaderboardMeta}
           highlightUserId={data.botUser.id}
           limit={10}
         />

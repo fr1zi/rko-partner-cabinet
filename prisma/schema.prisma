@@ -84,10 +84,18 @@ model Subscriber {
 }
 
 model Settings {
-  id                String  @id @default("default")
-  defaultCommission Float   @default(3000)
+  id                String   @id @default("default")
+  defaultCommission Float    @default(3000)
   adminInviteLink   String?
-  adminInviteName   String  @default("ADMIN")
+  adminInviteName   String   @default("ADMIN")
+  /// Motivational speech shown above the traffer leaderboard
+  lbSpeech          String   @default("Кто в топе по премиям — тот ближе к награде. Крутите трафик, закрывайте РКО и забирайте место на пьедестале.")
+  /// Prize / reward text (admin-written)
+  lbPrize           String   @default("Награда за 1 место — пишет админ в настройках лидерборда.")
+  /// Length of the current contest window in days
+  lbPeriodDays      Int      @default(30)
+  /// When the current contest window started (reset moves this to now)
+  lbPeriodStart     DateTime @default(now())
 }
 
 model ProductRate {

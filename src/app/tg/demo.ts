@@ -131,6 +131,15 @@ export const DEMO_CABINET: CabinetData = {
       leadsPaid: 8,
     },
   ],
+  leaderboardMeta: {
+    speech:
+      "Кто в топе по премиям — тот ближе к награде. Крутите трафик и забирайте пьедестал.",
+    prize: "1 место — приз от админа",
+    periodDays: 30,
+    periodStart: "2026-09-01T00:00:00.000Z",
+    periodEndsAt: null,
+    daysLeft: 12,
+  },
 };
 
 export const DEMO_ADMIN = {

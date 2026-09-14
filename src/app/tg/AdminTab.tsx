@@ -107,21 +107,20 @@ function AdminBody({
             wide
           />
         </div>
-        <section>
-          <h3 className="tg-section-label">Лидерборд трафферов</h3>
-          <LeaderboardList
-            rows={(data.leaderboard || []) as Array<{
-              rank: number;
-              userId: string;
-              username: string | null;
-              telegramId: string;
-              earned: number;
-              earnedLabel: string;
-              leadsPaid: number;
-            }>}
-            limit={10}
-          />
-        </section>
+        <LeaderboardAdminPanel
+          meta={(data.leaderboardMeta || null) as LeaderboardMetaState | null}
+          rows={(data.leaderboard || []) as Array<{
+            rank: number;
+            userId: string;
+            username: string | null;
+            telegramId: string;
+            earned: number;
+            earnedLabel: string;
+            leadsPaid: number;
+          }>}
+          onAction={onAction}
+          disabled={disabled}
+        />
       </div>
     );
   }
@@ -345,6 +344,131 @@ function AdminBody({
   }
 
   return null;
+}
+
+type LeaderboardMetaState = {
+  speech?: string;
+  prize?: string;
+  periodDays?: number;
+  periodStart?: string;
+  periodEndsAt?: string | null;
+  daysLeft?: number | null;
+};
+
+function LeaderboardAdminPanel({
+  meta,
+  rows,
+  onAction,
+  disabled,
+}: {
+  meta: LeaderboardMetaState | null;
+  rows: Array<{
+    rank: number;
+    userId: string;
+    username: string | null;
+    telegramId: string;
+    earned: number;
+    earnedLabel: string;
+    leadsPaid: number;
+  }>;
+  onAction: (body: Record<string, unknown>) => Promise<void>;
+  disabled?: boolean;
+}) {
+  const [speech, setSpeech] = useState(meta?.speech || "");
+  const [prize, setPrize] = useState(meta?.prize || "");
+  const [periodDays, setPeriodDays] = useState(
+    String(meta?.periodDays ?? 30)
+  );
+
+  useEffect(() => {
+    setSpeech(meta?.speech || "");
+    setPrize(meta?.prize || "");
+    setPeriodDays(String(meta?.periodDays ?? 30));
+  }, [meta?.speech, meta?.prize, meta?.periodDays, meta?.periodStart]);
+
+  return (
+    <div className="tg-stack">
+      <section className="tg-card space-y-3">
+        <h3 className="tg-card-title">Лидерборд — настройки</h3>
+        <label className="block space-y-1">
+          <span className="tg-muted text-xs">Награда (что получает топ)</span>
+          <input
+            className="tg-input w-full"
+            value={prize}
+            disabled={disabled}
+            onChange={(e) => setPrize(e.target.value)}
+            placeholder="Например: AirPods / 10 000 ₽ / мерка с основателем"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="tg-muted text-xs">Мотивационная речь</span>
+          <textarea
+            className="tg-input w-full min-h-[88px]"
+            value={speech}
+            disabled={disabled}
+            onChange={(e) => setSpeech(e.target.value)}
+            placeholder="Текст над таблицей лидеров"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="tg-muted text-xs">Срок периода (дней)</span>
+          <input
+            className="tg-input w-full"
+            type="number"
+            min={1}
+            max={365}
+            value={periodDays}
+            disabled={disabled}
+            onChange={(e) => setPeriodDays(e.target.value)}
+          />
+        </label>
+        {meta?.daysLeft != null ? (
+          <p className="tg-muted text-xs">
+            Сейчас осталось {meta.daysLeft} дн. до конца окна.
+          </p>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="tg-btn-primary"
+            disabled={disabled}
+            onClick={() =>
+              onAction({
+                action: "leaderboard_save",
+                speech,
+                prize,
+                periodDays: Number(periodDays) || 30,
+              })
+            }
+          >
+            Сохранить
+          </button>
+          <button
+            type="button"
+            className="tg-btn-secondary"
+            disabled={disabled}
+            onClick={() => {
+              if (
+                typeof window !== "undefined" &&
+                !window.confirm(
+                  "Сбросить лидерборд? Очки начнут считаться с этого момента."
+                )
+              ) {
+                return;
+              }
+              void onAction({ action: "leaderboard_reset" });
+            }}
+          >
+            Сброс периода
+          </button>
+        </div>
+      </section>
+      <section>
+        <h3 className="tg-section-label">Текущий топ</h3>
+        <LeaderboardList rows={rows} meta={meta} limit={10} />
+      </section>
+    </div>
+  );
 }
 
 function StatTile({

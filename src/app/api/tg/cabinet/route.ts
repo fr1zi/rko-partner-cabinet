@@ -112,10 +112,12 @@ export async function GET() {
     })
   );
 
-  const leaderboard =
+  const lbBundle =
     user.role === "subscriber" || user.role === "client"
-      ? []
+      ? { rows: [], meta: null }
       : await getTrafferLeaderboard(20);
+  const leaderboard = lbBundle.rows;
+  const leaderboardMeta = lbBundle.meta;
 
   return NextResponse.json({
     role: session.role,
@@ -178,6 +180,7 @@ export async function GET() {
     withdrawals,
     txs,
     leaderboard,
+    leaderboardMeta,
   });
 }
 

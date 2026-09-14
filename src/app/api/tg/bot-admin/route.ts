@@ -10,7 +10,13 @@ import {
 } from "@/lib/telegram";
 import { refLinkFor } from "@/lib/bot/users";
 import { setLeadStatus } from "@/lib/bot/leads";
-import { getCompanyProfit, getTrafferLeaderboard } from "@/lib/bot/leaderboard";
+import {
+  getCompanyProfit,
+  getTrafferLeaderboard,
+  updateLeaderboardSettings,
+  resetLeaderboardPeriod,
+  metaFromSettings,
+} from "@/lib/bot/leaderboard";
 
 async function requireChannelAdmin() {
   const session = await getSession();
@@ -113,7 +119,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const [trafters, clients, leads, sum, audience, profit, leaderboard] =
+  const [trafters, clients, leads, sum, audience, profit, lb] =
     await Promise.all([
       prisma.botUser.count({
         where: { role: { in: ["traffer", "admin"] } },
@@ -143,7 +149,8 @@ export async function GET(req: NextRequest) {
       companyProfitLabel: profit.companyProfitLabel,
       paidLeads: profit.paidLeads,
     },
-    leaderboard,
+    leaderboard: lb.rows,
+    leaderboardMeta: lb.meta,
   });
 }
 
@@ -154,6 +161,20 @@ export async function POST(req: NextRequest) {
   }
   const body = await req.json().catch(() => ({}));
   const action = body.action as string;
+
+  if (action === "leaderboard_save") {
+    const s = await updateLeaderboardSettings({
+      speech: body.speech,
+      prize: body.prize,
+      periodDays: body.periodDays,
+    });
+    return NextResponse.json({ ok: true, meta: metaFromSettings(s) });
+  }
+
+  if (action === "leaderboard_reset") {
+    const s = await resetLeaderboardPeriod();
+    return NextResponse.json({ ok: true, meta: metaFromSettings(s) });
+  }
 
   if (action === "product_create") {
     const reward = Number(body.reward) || 0;
