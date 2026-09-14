@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BANKS } from "@/lib/banks";
+import { BANKS, OFFER_DEFAULT_CATEGORY } from "@/lib/banks";
 import type { CabinetData, ProductsViewMode } from "./types";
 import { money } from "./utils";
 
@@ -79,11 +79,21 @@ export function ProductsTab({
       products.map((p) => p.bank).filter((b): b is string => Boolean(b))
     );
     const known = BANKS.filter((b) => present.has(b.label));
+    // Always show «Другое» for non-partner offers (subscribers + traffers)
+    const other = {
+      key: "other",
+      label: OFFER_DEFAULT_CATEGORY,
+      short: OFFER_DEFAULT_CATEGORY,
+    };
     const extras = Array.from(present)
-      .filter((label) => !BANKS.some((b) => b.label === label))
+      .filter(
+        (label) =>
+          !BANKS.some((b) => b.label === label) &&
+          label !== OFFER_DEFAULT_CATEGORY
+      )
       .sort()
       .map((label) => ({ key: label, label, short: label }));
-    return [...known, ...extras];
+    return [...known, other, ...extras];
   }, [products]);
 
   useEffect(() => {
@@ -169,7 +179,7 @@ export function ProductsTab({
       ) : null}
 
       {filtered.length === 0 ? (
-        <EmptyState text="Нет продуктов для этого банка" />
+        <EmptyState text="Нет продуктов в этой категории" />
       ) : (
         filtered.map((p) => {
           const amountLabel = isShop

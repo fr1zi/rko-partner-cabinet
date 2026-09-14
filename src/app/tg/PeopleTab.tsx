@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { CabinetData } from "./types";
-import { bankShort } from "@/lib/banks";
+import { bankShort, OFFER_DEFAULT_CATEGORY } from "@/lib/banks";
 import { formatOrderNumber } from "@/lib/orderNumber";
 import { formatDate, matchesUsernameQuery, money, statusLabel } from "./utils";
 
@@ -189,9 +189,15 @@ function ComposeCheckPanel({
       const b = (p.bank || "").trim();
       if (b) set.add(b);
     }
-    // products without bank go under «Прочее»
-    if (left.some((p) => !(p.bank || "").trim())) set.add("Прочее");
-    return Array.from(set).sort();
+    // Always show «Другое» for non-partner offers
+    set.add(OFFER_DEFAULT_CATEGORY);
+    const rest = [];
+    for (const b of Array.from(set)) {
+      if (b === OFFER_DEFAULT_CATEGORY) continue;
+      rest.push(b);
+    }
+    rest.sort();
+    return [...rest, OFFER_DEFAULT_CATEGORY];
   }, [left]);
 
   const activeBank =
@@ -200,7 +206,7 @@ function ComposeCheckPanel({
       : banksLeft[0] || "";
 
   const inBank = left.filter((p) => {
-    const b = (p.bank || "").trim() || "Прочее";
+    const b = (p.bank || "").trim() || OFFER_DEFAULT_CATEGORY;
     return b === activeBank;
   });
 
@@ -252,7 +258,7 @@ function ComposeCheckPanel({
       {banksLeft.length > 0 ? (
         <div>
           <label className="tg-people-meta-label" htmlFor={`bank-${userId}`}>
-            Банк
+            Категория
           </label>
           <select
             id={`bank-${userId}`}
@@ -263,7 +269,7 @@ function ComposeCheckPanel({
           >
             {banksLeft.map((b) => (
               <option key={b} value={b}>
-                {b === "Прочее" ? "Прочее" : bankShort(b) !== b ? `${bankShort(b)} (${b})` : b}
+                {b === OFFER_DEFAULT_CATEGORY ? OFFER_DEFAULT_CATEGORY : bankShort(b) !== b ? `${bankShort(b)} (${b})` : b}
               </option>
             ))}
           </select>
