@@ -999,6 +999,10 @@ function leadOwnerProfit(l: AdminLeadRow): number {
   return leadLineSplit(l).owner;
 }
 
+function leadSubscriberAmt(l: AdminLeadRow): number {
+  return leadLineSplit(l).subscriber;
+}
+
 function AdminLeadLineControls({
   l,
   onAction,
@@ -1415,13 +1419,40 @@ function AdminLeadsPanel({
 }) {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "processing" | "awaiting_payout" | "paid" | "rejected"
+    "processing" | "awaiting_payout" | "paid" | "rejected" | "closed"
   >("processing");
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
   const [restorePanelOrderId, setRestorePanelOrderId] = useState<string | null>(
     null
   );
+
+  const closedOrderIds = useMemo(() => {
+    const byOrder = new Map<string, AdminLeadRow[]>();
+    for (const l of leads) {
+      if (!l.orderId) continue;
+      const arr = byOrder.get(l.orderId) || [];
+      arr.push(l);
+      byOrder.set(l.orderId, arr);
+    }
+    const closed = new Set<string>();
+    byOrder.forEach((lines, oid) => {
+      const active = lines.filter(
+        (row: AdminLeadRow) => normalizeLeadSt(row.status) !== "rejected"
+      );
+      if (active.length === 0) return;
+      if (active.every((row: AdminLeadRow) => normalizeLeadSt(row.status) === "paid")) {
+        closed.add(oid);
+      }
+    });
+    return closed;
+  }, [leads]);
+
+  function isLeadInClosedOrder(l: AdminLeadRow): boolean {
+    if (l.orderId && closedOrderIds.has(l.orderId)) return true;
+    if (!l.orderId && normalizeLeadSt(l.status) === "paid") return true;
+    return false;
+  }
 
   const filteredLeads = useMemo(() => {
     return leads.filter((l) => {
@@ -1433,11 +1464,17 @@ function AdminLeadsPanel({
       );
       const orderHit = orderIdMatchesQuery(q, l.orderId);
       if (q.trim() && !userHit && !orderHit) return false;
+      const closed = isLeadInClosedOrder(l);
+      if (statusFilter === "closed") {
+        return closed && normalizeLeadSt(l.status) === "paid";
+      }
+      // Fully paid checks leave all other tabs
+      if (closed) return false;
       const st = normalizeLeadSt(l.status);
       if (st !== statusFilter) return false;
       return true;
     });
-  }, [leads, q, statusFilter]);
+  }, [leads, q, statusFilter, closedOrderIds]);
 
   const groups = useMemo(() => {
     // Keep full чек together: include sibling lines of the same orderId
@@ -1511,6 +1548,7 @@ function AdminLeadsPanel({
     ["awaiting_payout", "Ждём выплату"],
     ["paid", "Выплачено"],
     ["rejected", "Отказ"],
+    ["closed", "Закрытые заказы"],
   ];
 
   return (
@@ -1619,7 +1657,7 @@ function AdminLeadsPanel({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <p className="text-sm font-medium">
-                      Итог · прибыль:{" "}
+                      Итог: наша{" "}
                       <span className="tabular-nums">
                         {money(
                           mainLines.reduce(
@@ -1628,25 +1666,37 @@ function AdminLeadsPanel({
                           )
                         )}
                       </span>
+                      {" · "}
+                      подписчику{" "}
+                      <span className="tabular-nums">
+                        {money(
+                          mainLines.reduce(
+                            (sum, line) => sum + leadSubscriberAmt(line),
+                            0
+                          )
+                        )}
+                      </span>
                     </p>
-                    <button
-                      type="button"
-                      className="tg-btn-secondary text-xs shrink-0"
-                      disabled={disabled}
-                      onClick={() =>
-                        setRestorePanelOrderId((cur) =>
-                          cur === g.orderId ? null : g.orderId || null
-                        )
-                      }
-                    >
-                      {panelOpen
-                        ? "Скрыть"
-                        : removedForOrder.length > 0
-                          ? `Вернуть в чек (${removedForOrder.length})`
-                          : "Вернуть в чек"}
-                    </button>
+                    {statusFilter !== "closed" ? (
+                      <button
+                        type="button"
+                        className="tg-btn-secondary text-xs shrink-0"
+                        disabled={disabled}
+                        onClick={() =>
+                          setRestorePanelOrderId((cur) =>
+                            cur === g.orderId ? null : g.orderId || null
+                          )
+                        }
+                      >
+                        {panelOpen
+                          ? "Скрыть"
+                          : removedForOrder.length > 0
+                            ? `Вернуть в чек (${removedForOrder.length})`
+                            : "Вернуть в чек"}
+                      </button>
+                    ) : null}
                   </div>
-                  {panelOpen ? (
+                  {panelOpen && statusFilter !== "closed" ? (
                     <div className="rounded-xl border border-white/10 p-3 space-y-2">
                       <p className="tg-muted text-xs font-medium">
                         Можно вернуть в чек
