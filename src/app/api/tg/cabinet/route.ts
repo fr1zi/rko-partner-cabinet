@@ -16,6 +16,16 @@ import {
 } from "@/lib/productDefaults";
 import { createProductOrder, formatOrderReceipt } from "@/lib/bot/orders";
 
+async function ensureWithdrawalColumns() {
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "Withdrawal" ADD COLUMN IF NOT EXISTS "adminComment" TEXT`
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
 async function requireBotUser() {
   const session = await getSession();
   if (!session?.telegramId) return null;
@@ -35,6 +45,7 @@ export async function GET() {
   try {
   // Columns must exist before ANY BotLead Prisma SELECT
   await ensureHoldColumn();
+  await ensureWithdrawalColumns();
   await ensureBotProducts();
 
   const clicks = await prisma.referralClick.count({

@@ -135,7 +135,8 @@ export async function buildAndSendDailyDigest(): Promise<DailyDigestSummary> {
     prisma.botLead.count({
       where: {
         status: "rejected",
-        updatedAt: { gte: today.start, lt: today.end },
+        // no updatedAt on BotLead in prod — approximate by createdAt today
+        createdAt: { gte: today.start, lt: today.end },
       },
     }),
     prisma.withdrawal.count({
