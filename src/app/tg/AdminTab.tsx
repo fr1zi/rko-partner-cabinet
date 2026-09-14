@@ -964,6 +964,28 @@ function isRemovedFromCheck(l: AdminLeadRow) {
   return st === "rejected" && (l.adminComment || "").startsWith("Удалено из чека");
 }
 
+
+function leadSubscriberAmt(l: AdminLeadRow): number {
+  const adminRefResolved =
+    isAdminRefAttribution({
+      referrerId: l.referrerId ?? null,
+      referrerRole: l.referrer?.role,
+      inviteLinkName: l.client.inviteLinkName,
+    }) || (!l.referrer && (l.referrerId == null || l.referrerId === ""));
+  const split = resolveProductPayouts(
+    l.product.subscriberPrice ?? 0,
+    l.product.reward ?? 0,
+    { adminRef: adminRefResolved }
+  );
+  const rawSub = l.subscriberAmount;
+  const looksLikeLegacyCpa =
+    split.legacy &&
+    rawSub != null &&
+    Math.abs(Number(rawSub) - split.bankCpa) < 0.01;
+  if (rawSub != null && rawSub > 0 && !looksLikeLegacyCpa) return Number(rawSub);
+  return split.subscriber;
+}
+
 function AdminLeadLineControls({
   l,
   onAction,
@@ -1575,7 +1597,6 @@ function AdminLeadsPanel({
                 (l) => l.orderId === g.orderId && isRemovedFromCheck(l)
               )
             : g.lines.filter(isRemovedFromCheck);
-          const showRestoreBtn = Boolean(g.orderId) && !rejectedFocus;
           const panelOpen =
             Boolean(g.orderId) && restorePanelOrderId === g.orderId;
           const activeCount = mainLines.length;
@@ -1621,24 +1642,41 @@ function AdminLeadsPanel({
                   </div>
                 </div>
               ))}
-              {showRestoreBtn ? (
+              {g.orderId && !rejectedFocus ? (
                 <div className="space-y-2">
-                  <button
-                    type="button"
-                    className="tg-btn-secondary text-xs w-full"
-                    disabled={disabled}
-                    onClick={() =>
-                      setRestorePanelOrderId((cur) =>
-                        cur === g.orderId ? null : g.orderId || null
-                      )
-                    }
-                  >
-                    {panelOpen ? "Скрыть удалённые" : "Вернуть в заказ"}
-                  </button>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="text-sm font-medium">
+                      Итог чека:{" "}
+                      <span className="tabular-nums">
+                        {money(
+                          mainLines.reduce(
+                            (sum, line) => sum + leadSubscriberAmt(line),
+                            0
+                          )
+                        )}
+                      </span>
+                    </p>
+                    <button
+                      type="button"
+                      className="tg-btn-secondary text-xs shrink-0"
+                      disabled={disabled}
+                      onClick={() =>
+                        setRestorePanelOrderId((cur) =>
+                          cur === g.orderId ? null : g.orderId || null
+                        )
+                      }
+                    >
+                      {panelOpen
+                        ? "Скрыть"
+                        : removedForOrder.length > 0
+                          ? `Вернуть в чек (${removedForOrder.length})`
+                          : "Вернуть в чек"}
+                    </button>
+                  </div>
                   {panelOpen ? (
                     <div className="rounded-xl border border-white/10 p-3 space-y-2">
                       <p className="tg-muted text-xs font-medium">
-                        Удалено из этого чека
+                        Можно вернуть в чек
                       </p>
                       {removedForOrder.length === 0 ? (
                         <p className="tg-muted text-xs">Нет удалённых позиций</p>
@@ -1676,7 +1714,7 @@ function AdminLeadsPanel({
                                 onClick={() => {
                                   const note = String(
                                     prompt(
-                                      "Заметка: почему вернули в заказ (обязательно)"
+                                      "Заметка: почему вернули в чек (обязательно)"
                                     ) || ""
                                   ).trim();
                                   if (!note) {
