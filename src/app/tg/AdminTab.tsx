@@ -1576,7 +1576,7 @@ function AdminLeadsPanel({
           </button>
         ))}
       </div>
-      {filteredIds.length > 0 ? (
+      {filteredIds.length > 0 && statusFilter !== "closed" ? (
         <label className="flex items-center gap-2 text-sm px-1">
           <input
             type="checkbox"
@@ -1612,6 +1612,49 @@ function AdminLeadsPanel({
             Boolean(g.orderId) && restorePanelOrderId === g.orderId;
           const activeCount = mainLines.length;
           if (activeCount === 0) return null;
+          const ourSum = mainLines.reduce(
+            (sum, line) => sum + leadOwnerProfit(line),
+            0
+          );
+          const subSum = mainLines.reduce(
+            (sum, line) => sum + leadSubscriberAmt(line),
+            0
+          );
+          if (statusFilter === "closed") {
+            const productBrief = mainLines
+              .map((l) =>
+                formatProductLabel(l.product.title, l.product.bank)
+              )
+              .join(", ");
+            const closedAt =
+              mainLines
+                .map((l) => l.createdAt)
+                .filter(Boolean)
+                .sort()
+                .at(-1) || null;
+            return (
+              <div key={g.key} className="tg-card space-y-1">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="tg-card-title">{who}</p>
+                  <span className="tg-status tg-status-paid shrink-0">
+                    Закрыт
+                  </span>
+                </div>
+                <p className="tg-muted text-xs">
+                  {g.orderId
+                    ? `Чек ${formatOrderNumber(g.orderId)} · ${activeCount} поз.`
+                    : `${activeCount} поз.`}
+                  {closedAt ? ` · ${formatDate(String(closedAt))}` : ""}
+                </p>
+                <p className="tg-muted text-xs truncate" title={productBrief}>
+                  {productBrief}
+                </p>
+                <p className="text-sm font-medium tabular-nums">
+                  наша {money(ourSum)} · подписчику {money(subSum)}
+                </p>
+              </div>
+            );
+          }
           return (
             <div key={g.key} className="tg-card space-y-3">
               <div>
@@ -1677,26 +1720,24 @@ function AdminLeadsPanel({
                         )}
                       </span>
                     </p>
-                    {statusFilter !== "closed" ? (
-                      <button
-                        type="button"
-                        className="tg-btn-secondary text-xs shrink-0"
-                        disabled={disabled}
-                        onClick={() =>
-                          setRestorePanelOrderId((cur) =>
-                            cur === g.orderId ? null : g.orderId || null
-                          )
-                        }
-                      >
-                        {panelOpen
-                          ? "Скрыть"
-                          : removedForOrder.length > 0
-                            ? `Вернуть в чек (${removedForOrder.length})`
-                            : "Вернуть в чек"}
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      className="tg-btn-secondary text-xs shrink-0"
+                      disabled={disabled}
+                      onClick={() =>
+                        setRestorePanelOrderId((cur) =>
+                          cur === g.orderId ? null : g.orderId || null
+                        )
+                      }
+                    >
+                      {panelOpen
+                        ? "Скрыть"
+                        : removedForOrder.length > 0
+                          ? `Вернуть в чек (${removedForOrder.length})`
+                          : "Вернуть в чек"}
+                    </button>
                   </div>
-                  {panelOpen && statusFilter !== "closed" ? (
+                  {panelOpen ? (
                     <div className="rounded-xl border border-white/10 p-3 space-y-2">
                       <p className="tg-muted text-xs font-medium">
                         Можно вернуть в чек
@@ -1765,7 +1806,7 @@ function AdminLeadsPanel({
           );
         })
       )}
-      {selectedIds.length > 0 ? (
+      {selectedIds.length > 0 && statusFilter !== "closed" ? (
         <div className="tg-bulk-sticky">
           <p className="tg-muted text-xs mb-2">
             Выбрано: {selectedIds.length}
