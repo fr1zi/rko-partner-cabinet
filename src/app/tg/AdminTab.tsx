@@ -11,6 +11,7 @@ import {
 } from "@/lib/productDefaults";
 import type { AdminSubTab } from "./types";
 import { LeaderboardList } from "./Leaderboard";
+import { formatOrderNumber, orderIdMatchesQuery } from "@/lib/orderNumber";
 import {
   formatDate,
   formatProductLabel,
@@ -899,6 +900,7 @@ type AdminLeadRow = {
   referrerId?: string | null;
   fullName: string;
   phone: string;
+  createdAt?: string;
   subscriberAmount?: number | null;
   premiumAmount?: number | null;
   adminComment?: string | null;
@@ -949,14 +951,22 @@ function groupLeadsByOrder(leads: AdminLeadRow[]) {
   return groups;
 }
 
+function isRemovedFromCheck(l: AdminLeadRow) {
+  const st = normalizeLeadSt(l.status);
+  return st === "rejected" && (l.adminComment || "").startsWith("Удалено из чека");
+}
+
 function AdminLeadLineControls({
   l,
   onAction,
   disabled,
+  showRestoreButton,
 }: {
   l: AdminLeadRow;
   onAction: (body: Record<string, unknown>) => Promise<void>;
   disabled?: boolean;
+  /** Per-line restore — keep on rejected filter; hide on active check cards. */
+  showRestoreButton?: boolean;
 }) {
   const st =
     l.status === "new" || l.status === "duplicate"
@@ -1111,27 +1121,29 @@ function AdminLeadLineControls({
         >
           Удалить из чека
         </button>
-        <button
-          type="button"
-          className="tg-btn-primary text-xs"
-          disabled={disabled || st !== "rejected"}
-          onClick={() => {
-            const note = String(
-              prompt("Заметка: почему вернули в чек (обязательно)") || ""
-            ).trim();
-            if (!note) {
-              alert("Нужна заметка — возврат отменён");
-              return;
-            }
-            void onAction({
-              action: "restore_order_line",
-              leadId: l.id,
-              note,
-            });
-          }}
-        >
-          Вернуть в чек
-        </button>
+        {showRestoreButton ? (
+          <button
+            type="button"
+            className="tg-btn-primary text-xs"
+            disabled={disabled || st !== "rejected"}
+            onClick={() => {
+              const note = String(
+                prompt("Заметка: почему вернули в заказ (обязательно)") || ""
+              ).trim();
+              if (!note) {
+                alert("Нужна заметка — возврат отменён");
+                return;
+              }
+              void onAction({
+                action: "restore_order_line",
+                leadId: l.id,
+                note,
+              });
+            }}
+          >
+            Вернуть в заказ
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -1229,7 +1241,7 @@ function AdminUsersPanel({
                     <div key={g.key} className="space-y-1">
                       <p className="tg-muted text-xs">
                         {g.orderId
-                          ? `Чек ${g.orderId.slice(0, 12)}… · ${g.lines.length}`
+                          ? `Чек ${formatOrderNumber(g.orderId)} · ${g.lines.length}`
                           : "Без чека"}
                       </p>
                       {g.lines.map((iss) => (
@@ -1365,6 +1377,9 @@ function AdminLeadsPanel({
   const [bankFilter, setBankFilter] = useState<string>("");
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [restorePanelOrderId, setRestorePanelOrderId] = useState<string | null>(
+    null
+  );
 
   const banks = useMemo(() => {
     const set = new Set<string>();
@@ -1387,16 +1402,14 @@ function AdminLeadsPanel({
 
   const filteredLeads = useMemo(() => {
     return leads.filter((l) => {
-      if (
-        !matchesUsernameQuery(
-          q,
-          l.client.username,
-          l.client.telegramId,
-          l.fullName
-        )
-      ) {
-        return false;
-      }
+      const userHit = matchesUsernameQuery(
+        q,
+        l.client.username,
+        l.client.telegramId,
+        l.fullName
+      );
+      const orderHit = orderIdMatchesQuery(q, l.orderId);
+      if (q.trim() && !userHit && !orderHit) return false;
       const st = normalizeLeadSt(l.status);
       if (st !== statusFilter) return false;
       if (bankFilter) {
@@ -1488,7 +1501,7 @@ function AdminLeadsPanel({
       </p>
       <input
         className="tg-input"
-        placeholder="Поиск @username"
+        placeholder="Поиск @username или номер чека"
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
@@ -1545,6 +1558,19 @@ function AdminLeadsPanel({
           const refName = head.referrer
             ? tgHandle(head.referrer.username, head.referrer.telegramId)
             : "Админы";
+          const rejectedFocus = statusFilter === "rejected";
+          const mainLines = rejectedFocus
+            ? g.lines
+            : g.lines.filter((l) => normalizeLeadSt(l.status) !== "rejected");
+          const removedForOrder = g.orderId
+            ? leads.filter(
+                (l) => l.orderId === g.orderId && isRemovedFromCheck(l)
+              )
+            : g.lines.filter(isRemovedFromCheck);
+          const showRestoreBtn = Boolean(g.orderId);
+          const panelOpen =
+            Boolean(g.orderId) && restorePanelOrderId === g.orderId;
+          const activeCount = mainLines.length;
           return (
             <div key={g.key} className="tg-card space-y-3">
               <div>
@@ -1557,13 +1583,16 @@ function AdminLeadsPanel({
                 <p className="tg-muted text-xs mt-1">рефка: {refName}</p>
                 {g.orderId ? (
                   <p className="tg-muted text-xs mt-1">
-                    Чек · {g.lines.length} поз. · {g.orderId.slice(0, 14)}…
+                    Чек {formatOrderNumber(g.orderId)} · {activeCount} поз.
+                    {removedForOrder.length > 0 && !rejectedFocus
+                      ? ` · удалено ${removedForOrder.length}`
+                      : ""}
                   </p>
                 ) : (
                   <p className="tg-muted text-xs mt-1">Одна позиция</p>
                 )}
               </div>
-              {g.lines.map((l) => (
+              {mainLines.map((l) => (
                 <div key={l.id} className="flex gap-2 items-start">
                   <input
                     type="checkbox"
@@ -1578,10 +1607,90 @@ function AdminLeadsPanel({
                       l={l}
                       onAction={onAction}
                       disabled={disabled}
+                      showRestoreButton={rejectedFocus}
                     />
                   </div>
                 </div>
               ))}
+              {showRestoreBtn ? (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    className="tg-btn-secondary text-xs w-full"
+                    disabled={disabled}
+                    onClick={() =>
+                      setRestorePanelOrderId((cur) =>
+                        cur === g.orderId ? null : g.orderId || null
+                      )
+                    }
+                  >
+                    {panelOpen ? "Скрыть удалённые" : "Вернуть в заказ"}
+                  </button>
+                  {panelOpen ? (
+                    <div className="rounded-xl border border-white/10 p-3 space-y-2">
+                      <p className="tg-muted text-xs font-medium">
+                        Удалено из этого чека
+                      </p>
+                      {removedForOrder.length === 0 ? (
+                        <p className="tg-muted text-xs">Нет удалённых позиций</p>
+                      ) : (
+                        removedForOrder.map((l) => {
+                          const label = formatProductLabel(
+                            l.product.title,
+                            l.product.bank
+                          );
+                          const reason = (l.adminComment || "")
+                            .replace(/^Удалено из чека:\s*/, "")
+                            .trim();
+                          return (
+                            <div
+                              key={l.id}
+                              className="flex items-start justify-between gap-2 border-b border-white/5 pb-2 last:border-0 last:pb-0"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-sm">{label}</p>
+                                {reason ? (
+                                  <p className="tg-muted text-xs mt-0.5">
+                                    {reason}
+                                  </p>
+                                ) : null}
+                                {l.createdAt ? (
+                                  <p className="tg-muted text-xs">
+                                    {formatDate(l.createdAt)}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <button
+                                type="button"
+                                className="tg-btn-primary text-xs shrink-0"
+                                disabled={disabled}
+                                onClick={() => {
+                                  const note = String(
+                                    prompt(
+                                      "Заметка: почему вернули в заказ (обязательно)"
+                                    ) || ""
+                                  ).trim();
+                                  if (!note) {
+                                    alert("Нужна заметка — возврат отменён");
+                                    return;
+                                  }
+                                  void onAction({
+                                    action: "restore_order_line",
+                                    leadId: l.id,
+                                    note,
+                                  });
+                                }}
+                              >
+                                Вернуть
+                              </button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           );
         })

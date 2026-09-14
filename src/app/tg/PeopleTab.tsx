@@ -3,6 +3,7 @@
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { CabinetData } from "./types";
 import { bankShort } from "@/lib/banks";
+import { formatOrderNumber } from "@/lib/orderNumber";
 import { formatDate, matchesUsernameQuery, money, statusLabel } from "./utils";
 
 export type AdminPerson = {
@@ -130,7 +131,9 @@ export function PeopleTab({
                 {groups.map((g) => (
                   <div key={g.key} className="space-y-1">
                     {g.orderId ? (
-                      <p className="tg-muted text-xs">Чек · {g.lines.length}</p>
+                      <p className="tg-muted text-xs">
+                        Чек {formatOrderNumber(g.orderId)} · {g.lines.length}
+                      </p>
                     ) : null}
                     {g.lines.map((iss) => (
                       <div
@@ -629,7 +632,7 @@ function AdminPeopleTable({
                     <div key={g.key} className="space-y-1">
                       <p className="tg-muted text-xs">
                         {g.orderId
-                          ? `Чек ${g.orderId.slice(0, 12)}…`
+                          ? `Чек ${formatOrderNumber(g.orderId)}`
                           : "Без чека"}
                       </p>
                       <ul className="tg-people-issues">

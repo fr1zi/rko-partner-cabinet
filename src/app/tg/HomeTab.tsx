@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { CabinetData, TgRole } from "./types";
 import { LeaderboardList } from "./Leaderboard";
+import { formatOrderNumber } from "@/lib/orderNumber";
 import { formatDate, money, statusLabel } from "./utils";
 
 type AppRow = NonNullable<CabinetData["applications"]>[number];
@@ -166,7 +167,7 @@ export function HomeTab({
         <article className="tg-card space-y-2">
           {g.orderId ? (
             <p className="tg-muted text-xs">
-              Чек · {g.lines.length} поз.
+              Чек {formatOrderNumber(g.orderId)} · {g.lines.length} поз.
             </p>
           ) : null}
           {g.lines.map((a) => (

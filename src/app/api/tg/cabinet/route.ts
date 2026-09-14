@@ -14,7 +14,7 @@ import {
   estimateBankCpa,
   ownerMarginFromPayouts,
 } from "@/lib/productDefaults";
-import { createProductOrder, formatOrderReceipt } from "@/lib/bot/orders";
+import { createProductOrder, formatOrderReceipt, formatOrderNumber } from "@/lib/bot/orders";
 
 async function ensureWithdrawalColumns() {
   try {
@@ -312,7 +312,7 @@ export async function POST(req: NextRequest) {
 
     const receipt = formatOrderReceipt(result.lines, { html: true });
     await sendToAdmins(
-      `📥 Новый чек (в обработке)\nКлиент: ${clientLabel}\nЧек: ${result.orderId}\n${receipt}\nПозиций: ${result.created.length}`
+      `📥 Новый чек (в обработке)\nКлиент: ${clientLabel}\nЧек: ${formatOrderNumber(result.orderId)}\n${receipt}\nПозиций: ${result.created.length}`
     );
     if (user.referrerId) {
       const ref = await prisma.botUser.findUnique({
