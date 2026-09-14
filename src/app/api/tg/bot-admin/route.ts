@@ -358,7 +358,7 @@ export async function POST(req: NextRequest) {
     const leadIds: string[] = Array.isArray(body.leadIds)
       ? body.leadIds.map(String).filter(Boolean)
       : [];
-    let status = String(body.status || "");
+    const status = String(body.status || "");
     if (!["awaiting_payout", "paid", "rejected"].includes(status)) {
       return NextResponse.json({ error: "bad status" }, { status: 400 });
     }
