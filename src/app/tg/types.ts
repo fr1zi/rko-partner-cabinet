@@ -50,6 +50,8 @@ export type CabinetData = {
     description: string;
     reward: number;
     subscriberPrice: number;
+    bankCpa?: number;
+    ownerMargin?: number;
     rewardType: string;
     hot: boolean;
     hotText: string | null;

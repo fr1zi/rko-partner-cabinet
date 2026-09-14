@@ -6,6 +6,10 @@ import { getChannelJoinUrl } from "@/lib/bot/adminInvite";
 import { sendMessage, sendToAdmins } from "@/lib/telegram";
 import { supportDmUrl, normalizeLeadStatus } from "@/lib/bot/leads";
 import { getTrafferLeaderboard } from "@/lib/bot/leaderboard";
+import {
+  estimateBankCpa,
+  ownerMarginFromPayouts,
+} from "@/lib/productDefaults";
 
 async function requireBotUser() {
   const session = await getSession();
@@ -147,6 +151,8 @@ export async function GET() {
         description: p.description,
         reward: p.reward,
         subscriberPrice: p.subscriberPrice,
+        bankCpa: estimateBankCpa(p.subscriberPrice, p.reward),
+        ownerMargin: ownerMarginFromPayouts(p.subscriberPrice, p.reward),
         rewardType: p.rewardType,
         url: p.url,
         hot: isHotProduct(p),

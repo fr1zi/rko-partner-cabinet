@@ -68,14 +68,28 @@ export function subscriberPayout(cpa: number) {
   return Math.round(cpa * SUBSCRIBER_SHARE);
 }
 
-/** Company margin from actual subscriber + traffer payouts (45 of the 55 paid out). */
-export function ownerMarginFromPayouts(subscriber: number, traffer: number) {
+export function ownerPayout(cpa: number) {
+  return Math.round(cpa * OWNER_SHARE);
+}
+
+/** Infer bank CPA from subscriber + traffer legs (inverse of 45/10). */
+export function estimateBankCpa(subscriber: number, traffer: number) {
   const out = Math.max(0, subscriber) + Math.max(0, traffer);
   if (out <= 0) return 0;
-  // Legacy equal payouts had no owner cut — treat as 0 margin.
-  if (Math.abs(subscriber - traffer) < 0.01) return 0;
+  if (Math.abs(subscriber - traffer) < 0.01) {
+    // Legacy equal payouts: treat listed amount as CPA itself.
+    return Math.round(subscriber);
+  }
   const paidShare = SUBSCRIBER_SHARE + TRAFFER_SHARE;
-  return Math.round(out * (OWNER_SHARE / paidShare));
+  return Math.round(out / paidShare);
+}
+
+/** Company margin from actual subscriber + traffer payouts (45 of the 55 paid out). */
+export function ownerMarginFromPayouts(subscriber: number, traffer: number) {
+  const cpa = estimateBankCpa(subscriber, traffer);
+  if (!cpa) return 0;
+  if (Math.abs(subscriber - traffer) < 0.01) return 0;
+  return ownerPayout(cpa);
 }
 
 /** One BotProduct row per bank × product type. */
@@ -86,6 +100,8 @@ export function catalogEntries() {
     description: string;
     reward: number;
     subscriberPrice: number;
+    ownerMargin: number;
+    bankCpa: number;
     sortKey: string;
   }> = [];
   for (const bank of BANKS) {
@@ -98,6 +114,8 @@ export function catalogEntries() {
         description: `${r.productName} · ${bank.label}${age}`,
         reward: trafferReward(r.premium),
         subscriberPrice: subscriberPayout(r.premium),
+        ownerMargin: ownerPayout(r.premium),
+        bankCpa: r.premium,
         sortKey: `${r.sortOrder}-${bank.key}`,
       });
     }

@@ -4,6 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { isChannelAdmin, getChannelAudienceStats } from "@/lib/bot/channelAdmins";
 import { ensureBotProducts, formatMoney } from "@/lib/bot/users";
 import {
+  trafferReward,
+  subscriberPayout,
+  ownerPayout,
+  estimateBankCpa,
+  ownerMarginFromPayouts,
+} from "@/lib/productDefaults";
+import {
   sendMessage,
   createNamedInviteLink,
   isChannelInviteConfigured,
@@ -37,7 +44,16 @@ export async function GET(req: NextRequest) {
     const products = await prisma.botProduct.findMany({
       orderBy: { createdAt: "desc" },
     });
-    return NextResponse.json({ products });
+    return NextResponse.json({
+      products: products.map((pr) => {
+        const bankCpa = estimateBankCpa(pr.subscriberPrice, pr.reward);
+        return {
+          ...pr,
+          bankCpa,
+          ownerMargin: ownerMarginFromPayouts(pr.subscriberPrice, pr.reward),
+        };
+      }),
+    });
   }
   if (tab === "leads") {
     const leads = await prisma.botLead.findMany({
@@ -161,6 +177,30 @@ export async function POST(req: NextRequest) {
   }
   const body = await req.json().catch(() => ({}));
   const action = body.action as string;
+
+  if (action === "product_set_cpa") {
+    const id = String(body.id || "");
+    const cpa = Math.max(0, Math.round(Number(body.bankCpa) || 0));
+    const pr = await prisma.botProduct.findUnique({ where: { id } });
+    if (!pr) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const updated = await prisma.botProduct.update({
+      where: { id },
+      data: {
+        reward: trafferReward(cpa),
+        subscriberPrice: subscriberPayout(cpa),
+      },
+    });
+    return NextResponse.json({
+      ok: true,
+      product: {
+        ...updated,
+        bankCpa: cpa,
+        ownerMargin: ownerPayout(cpa),
+      },
+    });
+  }
 
   if (action === "leaderboard_save") {
     const s = await updateLeaderboardSettings({

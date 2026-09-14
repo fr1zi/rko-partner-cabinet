@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { BANKS } from "@/lib/banks";
+import {
+  estimateBankCpa,
+  ownerMarginFromPayouts,
+  ownerPayout,
+} from "@/lib/productDefaults";
 import type { AdminSubTab } from "./types";
 import { LeaderboardList } from "./Leaderboard";
 import {
@@ -795,6 +800,8 @@ type AdminProductRow = {
   bank?: string;
   reward: number;
   subscriberPrice: number;
+  bankCpa?: number;
+  ownerMargin?: number;
   isActive: boolean;
   isHot: boolean;
 };
@@ -840,8 +847,8 @@ function AdminProductsEditor({
     <div className="tg-stack">
       <p className="tg-note-plate">
         {isPrices
-          ? "Цены для подписчика по банкам. Премии — во вкладке «Премии»."
-          : "Премии трафферам по банкам. Цены подписчикам здесь не показываем."}
+          ? "CPA банка → 10/45/45. Наша премия 45% считается сама. Ручная цена — опционально."
+          : "CPA банка → 10/45/45. Наша премия 45% считается сама. Ручная премия трафферу — опционально."}
       </p>
       <div className="tg-bank-filters" role="tablist" aria-label="Банки">
         {bankOptions.map((b) => (
@@ -860,99 +867,160 @@ function AdminProductsEditor({
           <p>Нет продуктов для этого банка</p>
         </div>
       ) : (
-        filtered.map((p) => (
-          <div key={p.id} className="tg-card space-y-3">
-            <div className="tg-product-title-row">
-              <div className="min-w-0 flex-1">
-                <p className="tg-card-title">{p.title}</p>
-                {p.bank ? <p className="tg-product-bank">{p.bank}</p> : null}
+        filtered.map((p) => {
+          const sub = p.subscriberPrice ?? 0;
+          const prem = p.reward ?? 0;
+          const cpa =
+            p.bankCpa && p.bankCpa > 0
+              ? p.bankCpa
+              : estimateBankCpa(sub, prem) || Math.round(sub + prem);
+          const ours =
+            p.ownerMargin && p.ownerMargin > 0
+              ? p.ownerMargin
+              : ownerMarginFromPayouts(sub, prem) || ownerPayout(cpa);
+          return (
+            <div key={p.id} className="tg-card space-y-3">
+              <div className="tg-product-title-row">
+                <div className="min-w-0 flex-1">
+                  <p className="tg-card-title">{p.title}</p>
+                  {p.bank ? <p className="tg-product-bank">{p.bank}</p> : null}
+                </div>
+                {p.isHot ? <span className="tg-hot-badge">HOT</span> : null}
+                <span
+                  className={
+                    p.isActive
+                      ? "tg-status tg-status-approved"
+                      : "tg-status tg-status-none"
+                  }
+                >
+                  {p.isActive ? "Вкл" : "Выкл"}
+                </span>
               </div>
-              {p.isHot ? <span className="tg-hot-badge">HOT</span> : null}
-              <span
-                className={
-                  p.isActive
-                    ? "tg-status tg-status-approved"
-                    : "tg-status tg-status-none"
-                }
-              >
-                {p.isActive ? "Вкл" : "Выкл"}
-              </span>
-            </div>
-            <div className="tg-edit-block">
-              <label className="tg-label">
-                {isPrices ? "Цена для подписчика, ₽" : "Премия трафферу, ₽"}
-              </label>
-              <input
-                className="tg-input"
-                type="number"
-                defaultValue={
-                  isPrices ? p.subscriberPrice ?? p.reward : p.reward
-                }
+              <div className="tg-stat-grid">
+                <div className="tg-stat-tile">
+                  <p className="tg-stat-label">Подписчик</p>
+                  <p className="tg-stat-value text-base">{money(sub)}</p>
+                </div>
+                <div className="tg-stat-tile">
+                  <p className="tg-stat-label">Траффер</p>
+                  <p className="tg-stat-value text-base">{money(prem)}</p>
+                </div>
+                <div className="tg-stat-tile tg-stat-wide">
+                  <p className="tg-stat-label">Наша премия (45%)</p>
+                  <p className="tg-stat-value text-base text-money">
+                    {money(ours)}
+                  </p>
+                </div>
+              </div>
+              <div className="tg-edit-block">
+                <label className="tg-label">CPA банка, ₽</label>
+                <input
+                  className="tg-input"
+                  type="number"
+                  defaultValue={cpa}
+                  disabled={disabled}
+                  id={`cpa-${p.id}`}
+                />
+                <p className="tg-muted text-xs mt-1">
+                  10% траффер · 45% подписчик · 45% нам
+                </p>
+              </div>
+              <button
+                type="button"
+                className="tg-btn-primary w-full text-sm"
                 disabled={disabled}
-                id={`${isPrices ? "price" : "prem"}-${p.id}`}
-              />
-            </div>
-            <button
-              type="button"
-              className="tg-btn-primary w-full text-sm"
-              disabled={disabled}
-              onClick={() => {
-                const el = document.getElementById(
-                  `${isPrices ? "price" : "prem"}-${p.id}`
-                ) as HTMLInputElement | null;
-                if (isPrices) {
-                  const subscriberPrice = Number(
-                    el?.value || p.subscriberPrice || p.reward
-                  );
+                onClick={() => {
+                  const el = document.getElementById(
+                    `cpa-${p.id}`
+                  ) as HTMLInputElement | null;
+                  const bankCpa = Number(el?.value || cpa);
                   void onAction({
-                    action: "product_update",
+                    action: "product_set_cpa",
                     id: p.id,
-                    subscriberPrice,
+                    bankCpa,
                   });
-                } else {
-                  const reward = Number(el?.value || p.reward);
-                  void onAction({
-                    action: "product_update",
-                    id: p.id,
-                    reward,
-                  });
-                }
-              }}
-            >
-              {isPrices ? "Сохранить цену" : "Сохранить премию"}
-            </button>
-            {isPrices ? (
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="tg-btn-secondary text-xs flex-1"
-                  disabled={disabled}
-                  onClick={() =>
-                    void onAction({ action: "product_toggle", id: p.id })
+                }}
+              >
+                Применить 10/45/45 от CPA
+              </button>
+              <div className="tg-edit-block">
+                <label className="tg-label">
+                  {isPrices ? "Цена для подписчика, ₽" : "Премия трафферу, ₽"}
+                </label>
+                <input
+                  className="tg-input"
+                  type="number"
+                  defaultValue={
+                    isPrices ? p.subscriberPrice ?? p.reward : p.reward
                   }
-                >
-                  {p.isActive ? "Выключить" : "Включить"}
-                </button>
-                <button
-                  type="button"
-                  className="tg-btn-secondary text-xs flex-1"
                   disabled={disabled}
-                  onClick={() =>
-                    void onAction({
-                      action: "product_hot",
-                      id: p.id,
-                      isHot: !p.isHot,
-                      hotText: "Акция",
-                      days: 7,
-                    })
-                  }
-                >
-                  {p.isHot ? "Снять HOT" : "HOT 7д"}
-                </button>
+                  id={`${isPrices ? "price" : "prem"}-${p.id}`}
+                />
               </div>
-            ) : null}
-          </div>
-        ))
+              <button
+                type="button"
+                className="tg-btn-secondary w-full text-sm"
+                disabled={disabled}
+                onClick={() => {
+                  const el = document.getElementById(
+                    `${isPrices ? "price" : "prem"}-${p.id}`
+                  ) as HTMLInputElement | null;
+                  if (isPrices) {
+                    const subscriberPrice = Number(
+                      el?.value || p.subscriberPrice || p.reward
+                    );
+                    void onAction({
+                      action: "product_update",
+                      id: p.id,
+                      subscriberPrice,
+                    });
+                  } else {
+                    const reward = Number(el?.value || p.reward);
+                    void onAction({
+                      action: "product_update",
+                      id: p.id,
+                      reward,
+                    });
+                  }
+                }}
+              >
+                {isPrices
+                  ? "Сохранить только цену"
+                  : "Сохранить только премию"}
+              </button>
+              {isPrices ? (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="tg-btn-secondary text-xs flex-1"
+                    disabled={disabled}
+                    onClick={() =>
+                      void onAction({ action: "product_toggle", id: p.id })
+                    }
+                  >
+                    {p.isActive ? "Выключить" : "Включить"}
+                  </button>
+                  <button
+                    type="button"
+                    className="tg-btn-secondary text-xs flex-1"
+                    disabled={disabled}
+                    onClick={() =>
+                      void onAction({
+                        action: "product_hot",
+                        id: p.id,
+                        isHot: !p.isHot,
+                        hotText: "Акция",
+                        days: 7,
+                      })
+                    }
+                  >
+                    {p.isHot ? "Снять HOT" : "HOT 7д"}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })
       )}
     </div>
   );
