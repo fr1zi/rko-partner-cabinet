@@ -1,7 +1,7 @@
 "use client";
 
 import type { CabinetData } from "./types";
-import { formatDate, money, statusLabel, tgHandle } from "./utils";
+import { formatDate, money, statusLabel } from "./utils";
 
 export type AdminPerson = {
   id: string;
