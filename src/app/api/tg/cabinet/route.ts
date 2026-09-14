@@ -5,6 +5,7 @@ import { refLinkFor, formatMoney, isHotProduct, ensureBotProducts } from "@/lib/
 import { getChannelJoinUrl } from "@/lib/bot/adminInvite";
 import { sendMessage, sendToAdmins } from "@/lib/telegram";
 import { supportDmUrl, normalizeLeadStatus } from "@/lib/bot/leads";
+import { getTrafferLeaderboard } from "@/lib/bot/leaderboard";
 
 async function requireBotUser() {
   const session = await getSession();
@@ -111,6 +112,11 @@ export async function GET() {
     })
   );
 
+  const leaderboard =
+    user.role === "subscriber" || user.role === "client"
+      ? []
+      : await getTrafferLeaderboard(20);
+
   return NextResponse.json({
     role: session.role,
     botUser: {
@@ -171,6 +177,7 @@ export async function GET() {
     })),
     withdrawals,
     txs,
+    leaderboard,
   });
 }
 

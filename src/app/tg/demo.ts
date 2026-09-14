@@ -111,6 +111,26 @@ export const DEMO_CABINET: CabinetData = {
       createdAt: new Date(Date.now() - 1 * 86400000).toISOString(),
     },
   ],
+  leaderboard: [
+    {
+      rank: 1,
+      userId: "demo-user",
+      username: "demo_partner",
+      telegramId: "000000000",
+      earned: 49000,
+      earnedLabel: "49 000 ₽",
+      leadsPaid: 14,
+    },
+    {
+      rank: 2,
+      userId: "demo-t2",
+      username: "traf_max",
+      telegramId: "444",
+      earned: 21000,
+      earnedLabel: "21 000 ₽",
+      leadsPaid: 8,
+    },
+  ],
 };
 
 export const DEMO_ADMIN = {

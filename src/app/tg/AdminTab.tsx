@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BANKS } from "@/lib/banks";
 import type { AdminSubTab } from "./types";
+import { LeaderboardList } from "./Leaderboard";
 import {
   formatDate,
   formatProductLabel,
@@ -85,20 +86,42 @@ function AdminBody({
   if (tab === "stats") {
     const s = (data.stats || {}) as Record<string, unknown>;
     return (
-      <div className="tg-stat-grid">
-        <StatTile
-          label="Подписчики"
-          value={String(s.channelSubscribers ?? 0)}
-          wide
-        />
-        <StatTile label="Трафферы" value={String(s.trafters ?? 0)} />
-        <StatTile label="Клиенты" value={String(s.clients ?? 0)} />
-        <StatTile label="Заявки" value={String(s.leads ?? 0)} />
-        <StatTile
-          label="Начислено"
-          value={String(s.creditedLabel ?? "0")}
-          wide
-        />
+      <div className="tg-stack">
+        <div className="tg-stat-grid">
+          <StatTile
+            label="Подписчики"
+            value={String(s.channelSubscribers ?? 0)}
+            wide
+          />
+          <StatTile label="Трафферы" value={String(s.trafters ?? 0)} />
+          <StatTile label="Клиенты" value={String(s.clients ?? 0)} />
+          <StatTile label="Заявки" value={String(s.leads ?? 0)} />
+          <StatTile
+            label="Начислено"
+            value={String(s.creditedLabel ?? "0")}
+            wide
+          />
+          <StatTile
+            label="Прибыль компании"
+            value={String(s.companyProfitLabel ?? "0")}
+            wide
+          />
+        </div>
+        <section>
+          <h3 className="tg-section-label">Лидерборд трафферов</h3>
+          <LeaderboardList
+            rows={(data.leaderboard || []) as Array<{
+              rank: number;
+              userId: string;
+              username: string | null;
+              telegramId: string;
+              earned: number;
+              earnedLabel: string;
+              leadsPaid: number;
+            }>}
+            limit={10}
+          />
+        </section>
       </div>
     );
   }

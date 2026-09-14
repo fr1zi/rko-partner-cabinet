@@ -405,6 +405,9 @@ export default function TelegramMiniAppPage() {
                             channelMembersTotal?: number;
                             credited?: number;
                             creditedLabel?: string;
+                            companyProfit?: number;
+                            companyProfitLabel?: string;
+                            paidLeads?: number;
                           }
                         | undefined) || null
                     }

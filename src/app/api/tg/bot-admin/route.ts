@@ -10,6 +10,7 @@ import {
 } from "@/lib/telegram";
 import { refLinkFor } from "@/lib/bot/users";
 import { setLeadStatus } from "@/lib/bot/leads";
+import { getCompanyProfit, getTrafferLeaderboard } from "@/lib/bot/leaderboard";
 
 async function requireChannelAdmin() {
   const session = await getSession();
@@ -112,20 +113,23 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const [trafters, clients, leads, sum, audience] = await Promise.all([
-    prisma.botUser.count({
-      where: { role: { in: ["traffer", "admin"] } },
-    }),
-    prisma.botUser.count({
-      where: { role: { in: ["client", "subscriber"] } },
-    }),
-    prisma.botLead.count(),
-    prisma.ledgerTx.aggregate({
-      where: { type: "credit_lead" },
-      _sum: { amount: true },
-    }),
-    getChannelAudienceStats(true),
-  ]);
+  const [trafters, clients, leads, sum, audience, profit, leaderboard] =
+    await Promise.all([
+      prisma.botUser.count({
+        where: { role: { in: ["traffer", "admin"] } },
+      }),
+      prisma.botUser.count({
+        where: { role: { in: ["client", "subscriber"] } },
+      }),
+      prisma.botLead.count(),
+      prisma.ledgerTx.aggregate({
+        where: { type: "credit_lead" },
+        _sum: { amount: true },
+      }),
+      getChannelAudienceStats(true),
+      getCompanyProfit(),
+      getTrafferLeaderboard(10),
+    ]);
   return NextResponse.json({
     stats: {
       trafters,
@@ -135,7 +139,11 @@ export async function GET(req: NextRequest) {
       channelMembersTotal: audience?.total ?? 0,
       credited: sum._sum.amount || 0,
       creditedLabel: formatMoney(sum._sum.amount || 0),
+      companyProfit: profit.companyProfit,
+      companyProfitLabel: profit.companyProfitLabel,
+      paidLeads: profit.paidLeads,
     },
+    leaderboard,
   });
 }
 

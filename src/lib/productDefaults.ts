@@ -68,6 +68,16 @@ export function subscriberPayout(cpa: number) {
   return Math.round(cpa * SUBSCRIBER_SHARE);
 }
 
+/** Company margin from actual subscriber + traffer payouts (45 of the 55 paid out). */
+export function ownerMarginFromPayouts(subscriber: number, traffer: number) {
+  const out = Math.max(0, subscriber) + Math.max(0, traffer);
+  if (out <= 0) return 0;
+  // Legacy equal payouts had no owner cut — treat as 0 margin.
+  if (Math.abs(subscriber - traffer) < 0.01) return 0;
+  const paidShare = SUBSCRIBER_SHARE + TRAFFER_SHARE;
+  return Math.round(out * (OWNER_SHARE / paidShare));
+}
+
 /** One BotProduct row per bank × product type. */
 export function catalogEntries() {
   const out: Array<{

@@ -84,6 +84,15 @@ export type CabinetData = {
     comment: string | null;
     createdAt: string;
   }>;
+  leaderboard?: Array<{
+    rank: number;
+    userId: string;
+    username: string | null;
+    telegramId: string;
+    earned: number;
+    earnedLabel: string;
+    leadsPaid: number;
+  }>;
 };
 
 export type PartnerTab = "home" | "products" | "premiums" | "people" | "withdraw";

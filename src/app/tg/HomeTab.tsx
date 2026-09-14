@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { CabinetData, TgRole } from "./types";
+import { LeaderboardList } from "./Leaderboard";
 import { formatDate, isSubscriberClosedOrder, money, statusLabel } from "./utils";
 
 export type AdminHomeStats = {
@@ -12,6 +13,9 @@ export type AdminHomeStats = {
   channelMembersTotal?: number;
   credited?: number;
   creditedLabel?: string;
+  companyProfit?: number;
+  companyProfitLabel?: string;
+  paidLeads?: number;
 };
 
 export function HomeTab({
@@ -56,6 +60,13 @@ export function HomeTab({
         value: String(s.creditedLabel ?? money(Number(s.credited ?? 0))),
         wide: true,
       },
+      {
+        label: "Прибыль компании",
+        value: String(
+          s.companyProfitLabel ?? money(Number(s.companyProfit ?? 0))
+        ),
+        wide: true,
+      },
     ];
     return (
       <div className="tg-stack">
@@ -78,6 +89,10 @@ export function HomeTab({
               </div>
             ))}
           </div>
+        </section>
+        <section>
+          <h2 className="tg-section-label">Лидерборд трафферов</h2>
+          <LeaderboardList rows={data.leaderboard} limit={10} />
         </section>
         <a
           className="tg-btn-secondary w-full text-center"
@@ -257,6 +272,15 @@ export function HomeTab({
             </div>
           ))}
         </div>
+      </section>
+
+      <section>
+        <h2 className="tg-section-label">Лидерборд</h2>
+        <LeaderboardList
+          rows={data.leaderboard}
+          highlightUserId={data.botUser.id}
+          limit={10}
+        />
       </section>
     </div>
   );
