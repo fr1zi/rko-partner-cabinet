@@ -43,6 +43,8 @@ export function txTypeLabel(type: string) {
     credit_lead: "Премия траффера",
     credit_sub: "Начисление подписчику",
     debit_withdraw: "Вывод",
+    debit_reverse_lead: "Сторно премии",
+    debit_reverse_sub: "Сторно выплаты",
     adjust: "Корректировка",
   };
   return map[type] || type;

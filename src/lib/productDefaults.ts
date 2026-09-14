@@ -5,6 +5,14 @@ export const TRAFFER_SHARE = 0.1;
 export const SUBSCRIBER_SHARE = 0.45;
 export const OWNER_SHARE = 0.45;
 
+/**
+ * When ref is Admins (no external traffer): owner absorbs the 10% traffer slice.
+ * subscriber 45% · owner 55% · traffer 0.
+ */
+export const OWNER_SHARE_ADMIN_REF = 0.55;
+
+const ADMIN_INVITE_NAME = "ADMIN";
+
 /** `premium` = bank CPA (total payout from bank for one approved lead). */
 export const DEFAULT_PRODUCT_RATES = [
   {
@@ -72,43 +80,119 @@ export function ownerPayout(cpa: number) {
   return Math.round(cpa * OWNER_SHARE);
 }
 
-/** Infer bank CPA from subscriber + traffer legs (inverse of 45/10). */
+export function ownerPayoutAdminRef(cpa: number) {
+  return Math.round(cpa * OWNER_SHARE_ADMIN_REF);
+}
+
+/**
+ * Detect admin / «Админы» attribution for payout formula.
+ * True when: no referrer, referrer is admin, or invite attributed to ADMIN.
+ */
+export function isAdminRefAttribution(opts: {
+  referrerId?: string | null;
+  referrerRole?: string | null;
+  inviteLinkName?: string | null;
+}): boolean {
+  if (!opts.referrerId) return true;
+  if ((opts.referrerRole || "").toLowerCase() === "admin") return true;
+  if ((opts.inviteLinkName || "").trim().toUpperCase() === ADMIN_INVITE_NAME) {
+    return true;
+  }
+  return false;
+}
+
+/** Infer bank CPA from subscriber + traffer legs (inverse of 45/10 or 45/0 admin-ref). */
 export function estimateBankCpa(subscriber: number, traffer: number) {
-  const out = Math.max(0, subscriber) + Math.max(0, traffer);
+  const sub = Math.max(0, subscriber);
+  const prem = Math.max(0, traffer);
+  const out = sub + prem;
   if (out <= 0) return 0;
-  if (Math.abs(subscriber - traffer) < 0.01) {
+  if (Math.abs(sub - prem) < 0.01 && prem > 0) {
     // Legacy equal payouts: treat listed amount as CPA itself.
-    return Math.round(subscriber);
+    return Math.round(sub);
+  }
+  // Admin-ref (or no traffer paid): only subscriber leg → CPA = sub / 0.45
+  if (prem < 0.01) {
+    return Math.round(sub / SUBSCRIBER_SHARE);
   }
   const paidShare = SUBSCRIBER_SHARE + TRAFFER_SHARE;
   return Math.round(out / paidShare);
 }
 
-/** Company margin from actual subscriber + traffer payouts (45 of the 55 paid out). */
+/**
+ * Company margin from actual subscriber + traffer payouts.
+ * Admin-ref (traffer≈0): owner gets 55% of CPA.
+ * Normal: owner gets 45% of CPA.
+ */
 export function ownerMarginFromPayouts(subscriber: number, traffer: number) {
-  const cpa = estimateBankCpa(subscriber, traffer);
+  const sub = Math.max(0, subscriber);
+  const prem = Math.max(0, traffer);
+  if (sub <= 0 && prem <= 0) return 0;
+  if (Math.abs(sub - prem) < 0.01 && prem > 0) return 0;
+  const cpa = estimateBankCpa(sub, prem);
   if (!cpa) return 0;
-  if (Math.abs(subscriber - traffer) < 0.01) return 0;
+  if (prem < 0.01) return ownerPayoutAdminRef(cpa);
   return ownerPayout(cpa);
 }
+
+export type ResolvePayoutOpts = {
+  /** No external traffer — 55/45 owner/subscriber. */
+  adminRef?: boolean;
+};
 
 /**
  * Resolve payout legs from BotProduct fields.
  * Legacy catalog stored bank CPA in BOTH reward and subscriberPrice.
  */
-export function resolveProductPayouts(subscriberPrice: number, reward: number) {
+export function resolveProductPayouts(
+  subscriberPrice: number,
+  reward: number,
+  opts?: ResolvePayoutOpts
+) {
   const sub = Math.max(0, Number(subscriberPrice) || 0);
   const prem = Math.max(0, Number(reward) || 0);
+  const adminRef = Boolean(opts?.adminRef);
+
   if (sub > 0 && Math.abs(sub - prem) < 0.01) {
     const cpa = Math.round(sub);
+    if (adminRef) {
+      return {
+        bankCpa: cpa,
+        subscriber: subscriberPayout(cpa),
+        traffer: 0,
+        owner: ownerPayoutAdminRef(cpa),
+        legacy: true as const,
+        adminRef: true as const,
+      };
+    }
     return {
       bankCpa: cpa,
       subscriber: subscriberPayout(cpa),
       traffer: trafferReward(cpa),
       owner: ownerPayout(cpa),
       legacy: true as const,
+      adminRef: false as const,
     };
   }
+
+  if (adminRef) {
+    // Prefer catalog subscriberPrice as 45% leg; fall back to inverse from reward as CPA.
+    const cpa =
+      sub > 0
+        ? Math.round(sub / SUBSCRIBER_SHARE)
+        : prem > 0
+          ? Math.round(prem / TRAFFER_SHARE)
+          : 0;
+    return {
+      bankCpa: cpa,
+      subscriber: subscriberPayout(cpa),
+      traffer: 0,
+      owner: ownerPayoutAdminRef(cpa),
+      legacy: false as const,
+      adminRef: true as const,
+    };
+  }
+
   const cpa = estimateBankCpa(sub, prem);
   return {
     bankCpa: cpa,
@@ -116,6 +200,7 @@ export function resolveProductPayouts(subscriberPrice: number, reward: number) {
     traffer: Math.round(prem),
     owner: ownerMarginFromPayouts(sub, prem),
     legacy: false as const,
+    adminRef: false as const,
   };
 }
 

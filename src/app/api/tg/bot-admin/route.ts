@@ -16,7 +16,7 @@ import {
   isChannelInviteConfigured,
 } from "@/lib/telegram";
 import { refLinkFor } from "@/lib/bot/users";
-import { setLeadStatus } from "@/lib/bot/leads";
+import { setLeadStatus, removeOrderLine } from "@/lib/bot/leads";
 import {
   getCompanyProfit,
   getTrafferLeaderboard,
@@ -308,6 +308,26 @@ export async function POST(req: NextRequest) {
       subscriberAmount,
       comment: body.comment ? String(body.comment) : undefined,
     });
+    if ("error" in result) {
+      const code = result.error === "not found" ? 404 : 400;
+      return NextResponse.json({ error: result.error }, { status: code });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "remove_order_line") {
+    const leadId = String(body.leadId || body.id || "");
+    const reason = String(body.reason || "").trim();
+    if (!leadId) {
+      return NextResponse.json({ error: "нет leadId" }, { status: 400 });
+    }
+    if (!reason) {
+      return NextResponse.json(
+        { error: "укажите причину удаления" },
+        { status: 400 }
+      );
+    }
+    const result = await removeOrderLine({ leadId, reason });
     if ("error" in result) {
       const code = result.error === "not found" ? 404 : 400;
       return NextResponse.json({ error: result.error }, { status: code });

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BANKS } from "@/lib/banks";
 import {
   estimateBankCpa,
+  isAdminRefAttribution,
   ownerMarginFromPayouts,
   ownerPayout,
   resolveProductPayouts,
@@ -174,165 +175,14 @@ function AdminBody({
   }
 
   if (tab === "users") {
-    const users = (data.users || []) as Array<{
-      id: string;
-      username: string | null;
-      firstName?: string | null;
-      telegramId: string;
-      role: string;
-      balance: number;
-      isBanned: boolean;
-      createdAt?: string;
-      refSource?: string | null;
-      issues?: Array<{
-        id: string;
-        status: string;
-        productId: string;
-        product: string;
-        premium: number;
-      }>;
-    }>;
-    const products = (data.products || []) as Array<{
-      id: string;
-      title: string;
-      reward: number;
-    }>;
+    const users = (data.users || []) as AdminUserRow[];
     if (users.length === 0) return <div className="tg-empty">Пока нет юзеров</div>;
     return (
-      <div className="tg-stack">
-        <p className="tg-note-plate">
-          Общая база: заход и чья рефка. Чек оформляйте во вкладке «Люди»
-          (мультивыбор). Здесь — роли и бан. Премия уходит трафферу.
-        </p>
-        {users.map((u) => {
-          const isAdm = u.role === "admin";
-          const issued = new Set((u.issues || []).map((x) => x.productId));
-          const left = products.filter((p) => !issued.has(p.id));
-          const roleRu =
-            u.role === "admin"
-              ? "админ"
-              : u.role === "traffer"
-                ? "траффер"
-                : "подписчик";
-          return (
-            <div key={u.id} className="tg-card space-y-3">
-              <div>
-                <p className="tg-card-title">
-                  {u.isBanned ? "🚫 " : ""}
-                  {tgHandle(u.username, u.telegramId)}
-                </p>
-                <p className="tg-muted text-sm mt-1">
-                  {roleRu} · рефка: {u.refSource || "Админы"}
-                </p>
-                <p className="tg-muted text-xs mt-1">
-                  {u.createdAt ? formatDate(u.createdAt) : ""}
-                </p>
-              </div>
-              {(u.issues || []).length > 0 ? (
-                <div className="space-y-1">
-                  {(u.issues || []).map((iss) => (
-                    <p key={iss.id} className="text-xs">
-                      {iss.product} · {money(iss.premium)} · {statusLabel(iss.status)}
-                      {(iss as { orderId?: string | null }).orderId
-                        ? " · чек"
-                        : ""}
-                    </p>
-                  ))}
-                </div>
-              ) : (
-                <p className="tg-muted text-xs">Продукты не оформлены</p>
-              )}
-              {!isAdm && left.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="tg-muted text-xs">
-                    Оформление чеком — вкладка «Люди», либо все сразу:
-                  </p>
-                  <button
-                    type="button"
-                    className="tg-btn-primary text-xs w-full"
-                    disabled={disabled}
-                    onClick={() =>
-                      void onAction({
-                        action: "issue_products",
-                        userId: u.id,
-                        productIds: "all",
-                      })
-                    }
-                  >
-                    Оформить чек (все оставшиеся)
-                  </button>
-                </div>
-              ) : null}
-              {!isAdm ? (
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="tg-btn-secondary text-xs flex-1"
-                    disabled={disabled || u.role === "traffer"}
-                    onClick={() =>
-                      void onAction({
-                        action: "user_set_role",
-                        id: u.id,
-                        role: "traffer",
-                      })
-                    }
-                  >
-                    сделать траффером
-                  </button>
-                  <button
-                    type="button"
-                    className="tg-btn-secondary text-xs flex-1"
-                    disabled={
-                      disabled ||
-                      u.role === "subscriber" ||
-                      u.role === "client"
-                    }
-                    onClick={() =>
-                      void onAction({
-                        action: "user_set_role",
-                        id: u.id,
-                        role: "subscriber",
-                      })
-                    }
-                  >
-                    сделать подписчиком
-                  </button>
-                </div>
-              ) : (
-                <p className="tg-muted text-xs">Админ канала — роль не меняется</p>
-              )}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="tg-btn-secondary text-xs flex-1"
-                  disabled={disabled}
-                  onClick={() => void onAction({ action: "user_ban", id: u.id })}
-                >
-                  {u.isBanned ? "Разбан" : "Бан"}
-                </button>
-                <button
-                  type="button"
-                  className="tg-btn-secondary text-xs flex-1"
-                  disabled={disabled}
-                  onClick={() => {
-                    const amount = Number(
-                      prompt("Корректировка баланса (±)") || 0
-                    );
-                    if (amount)
-                      void onAction({
-                        action: "user_adjust",
-                        id: u.id,
-                        amount,
-                      });
-                  }}
-                >
-                  Баланс ±
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <AdminUsersPanel
+        users={users}
+        onAction={onAction}
+        disabled={disabled}
+      />
     );
   }
 
@@ -483,18 +333,51 @@ function StatTile({
 
 
 
+type AdminUserIssue = {
+  id: string;
+  status: string;
+  productId: string;
+  product: string;
+  premium: number;
+  orderId?: string | null;
+};
+
+type AdminUserRow = {
+  id: string;
+  username: string | null;
+  firstName?: string | null;
+  telegramId: string;
+  role: string;
+  balance: number;
+  isBanned: boolean;
+  createdAt?: string;
+  refSource?: string | null;
+  issues?: AdminUserIssue[];
+};
+
 type AdminLeadRow = {
   id: string;
   status: string;
   orderId?: string | null;
+  referrerId?: string | null;
   fullName: string;
   phone: string;
   subscriberAmount?: number | null;
   premiumAmount?: number | null;
   adminComment?: string | null;
   product: { title: string; bank?: string; subscriberPrice?: number; reward?: number };
-  client: { username: string | null; telegramId: string; firstName?: string | null };
-  referrer?: { username: string | null; telegramId?: string; firstName?: string | null } | null;
+  client: {
+    username: string | null;
+    telegramId: string;
+    firstName?: string | null;
+    inviteLinkName?: string | null;
+  };
+  referrer?: {
+    username: string | null;
+    telegramId?: string;
+    firstName?: string | null;
+    role?: string | null;
+  } | null;
 };
 
 type AdminWdRow = {
@@ -543,9 +426,16 @@ function AdminLeadLineControls({
       : l.status === "approved"
         ? "awaiting_payout"
         : l.status;
+  const adminRefResolved =
+    isAdminRefAttribution({
+      referrerId: l.referrerId ?? null,
+      referrerRole: l.referrer?.role,
+      inviteLinkName: l.client.inviteLinkName,
+    }) || (!l.referrer && (l.referrerId == null || l.referrerId === ""));
   const split = resolveProductPayouts(
     l.product.subscriberPrice ?? 0,
-    l.product.reward ?? 0
+    l.product.reward ?? 0,
+    { adminRef: adminRefResolved }
   );
   const rawSub = l.subscriberAmount;
   const looksLikeLegacyCpa =
@@ -556,9 +446,11 @@ function AdminLeadLineControls({
     rawSub != null && rawSub > 0 && !looksLikeLegacyCpa
       ? Number(rawSub)
       : split.subscriber;
-  const prem = l.premiumAmount ?? split.traffer;
+  const prem = adminRefResolved ? 0 : l.premiumAmount ?? split.traffer;
   const ours = split.owner;
   const productLabel = formatProductLabel(l.product.title, l.product.bank);
+  const removedHint =
+    (l.adminComment || "").startsWith("Удалено из чека") && st === "rejected";
 
   return (
     <div className="space-y-2 rounded-xl border border-white/5 p-3">
@@ -583,9 +475,15 @@ function AdminLeadLineControls({
           id={`amt-${l.id}`}
         />
         <p className="tg-muted text-xs">
-          Премия траффера: {money(prem)} · нам: {money(ours)} · CPA:{" "}
-          {money(split.bankCpa)}
+          {adminRefResolved
+            ? `Рефка Админы · нам 55%: ${money(ours)} · подписчику 45%: ${money(defAmt)} · CPA: ${money(split.bankCpa)}`
+            : `Премия траффера: ${money(prem)} · нам: ${money(ours)} · CPA: ${money(split.bankCpa)}`}
         </p>
+        {removedHint ? (
+          <p className="tg-muted text-xs">Удалено из чека · {l.adminComment}</p>
+        ) : l.adminComment ? (
+          <p className="tg-muted text-xs">{l.adminComment}</p>
+        ) : null}
       </div>
       <div className="flex gap-2 flex-wrap">
         <button
@@ -654,7 +552,211 @@ function AdminLeadLineControls({
         >
           Не прошло
         </button>
+        <button
+          type="button"
+          className="tg-btn-secondary text-xs"
+          disabled={disabled || st === "rejected"}
+          onClick={() => {
+            const reason = String(
+              prompt("Причина удаления из чека (обязательно)") || ""
+            ).trim();
+            if (!reason) {
+              alert("Нужна причина — удаление отменено");
+              return;
+            }
+            void onAction({
+              action: "remove_order_line",
+              leadId: l.id,
+              reason,
+            });
+          }}
+        >
+          Удалить из чека
+        </button>
       </div>
+    </div>
+  );
+}
+
+function groupUserIssuesByOrder(issues: AdminUserIssue[]) {
+  const groups: Array<{
+    key: string;
+    orderId: string | null;
+    lines: AdminUserIssue[];
+  }> = [];
+  const byOrder = new Map<string, AdminUserIssue[]>();
+  const singles: AdminUserIssue[] = [];
+  for (const iss of issues) {
+    if (iss.orderId) {
+      const list = byOrder.get(iss.orderId) || [];
+      list.push(iss);
+      byOrder.set(iss.orderId, list);
+    } else {
+      singles.push(iss);
+    }
+  }
+  for (const [orderId, lines] of Array.from(byOrder.entries())) {
+    groups.push({ key: orderId, orderId, lines });
+  }
+  for (const iss of singles) {
+    groups.push({ key: iss.id, orderId: null, lines: [iss] });
+  }
+  return groups;
+}
+
+function AdminUsersPanel({
+  users,
+  onAction,
+  disabled,
+}: {
+  users: AdminUserRow[];
+  onAction: (body: Record<string, unknown>) => Promise<void>;
+  disabled?: boolean;
+}) {
+  const [historyId, setHistoryId] = useState<string | null>(null);
+
+  return (
+    <div className="tg-stack">
+      <p className="tg-note-plate">
+        База юзеров: роль, рефка, бан. Оформление чека — во вкладке «Люди».
+        Здесь можно посмотреть историю заявок.
+      </p>
+      {users.map((u) => {
+        const isAdm = u.role === "admin";
+        const roleRu =
+          u.role === "admin"
+            ? "админ"
+            : u.role === "traffer"
+              ? "траффер"
+              : "подписчик";
+        const issues = u.issues || [];
+        const groups = groupUserIssuesByOrder(issues);
+        const viewing = historyId === u.id;
+        return (
+          <div key={u.id} className="tg-card space-y-3">
+            <div>
+              <p className="tg-card-title">
+                {u.isBanned ? "🚫 " : ""}
+                {tgHandle(u.username, u.telegramId)}
+              </p>
+              <p className="tg-muted text-sm mt-1">
+                {roleRu} · рефка: {u.refSource || "Админы"}
+              </p>
+              <p className="tg-muted text-xs mt-1">
+                {u.createdAt ? formatDate(u.createdAt) : ""}
+                {u.balance != null ? ` · баланс ${money(u.balance)}` : ""}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="tg-btn-secondary text-xs w-full"
+              onClick={() =>
+                setHistoryId((cur) => (cur === u.id ? null : u.id))
+              }
+            >
+              {viewing ? "Скрыть историю" : "История заявок"}
+              {issues.length > 0 ? ` · ${issues.length}` : ""}
+            </button>
+
+            {viewing ? (
+              <div className="space-y-2">
+                {groups.length === 0 ? (
+                  <p className="tg-muted text-xs">Заявок пока нет</p>
+                ) : (
+                  groups.map((g) => (
+                    <div key={g.key} className="space-y-1">
+                      <p className="tg-muted text-xs">
+                        {g.orderId
+                          ? `Чек ${g.orderId.slice(0, 12)}… · ${g.lines.length}`
+                          : "Без чека"}
+                      </p>
+                      {g.lines.map((iss) => (
+                        <div
+                          key={iss.id}
+                          className="flex items-center justify-between gap-2 text-sm"
+                        >
+                          <span className="truncate">{iss.product} ×1</span>
+                          <span className="tg-muted text-xs shrink-0">
+                            {money(iss.premium)} · {statusLabel(iss.status)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : null}
+
+            {!isAdm ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs flex-1"
+                  disabled={disabled || u.role === "traffer"}
+                  onClick={() =>
+                    void onAction({
+                      action: "user_set_role",
+                      id: u.id,
+                      role: "traffer",
+                    })
+                  }
+                >
+                  сделать траффером
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs flex-1"
+                  disabled={
+                    disabled ||
+                    u.role === "subscriber" ||
+                    u.role === "client"
+                  }
+                  onClick={() =>
+                    void onAction({
+                      action: "user_set_role",
+                      id: u.id,
+                      role: "subscriber",
+                    })
+                  }
+                >
+                  сделать подписчиком
+                </button>
+              </div>
+            ) : (
+              <p className="tg-muted text-xs">Админ канала — роль не меняется</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="tg-btn-secondary text-xs flex-1"
+                disabled={disabled}
+                onClick={() => void onAction({ action: "user_ban", id: u.id })}
+              >
+                {u.isBanned ? "Разбан" : "Бан"}
+              </button>
+              <button
+                type="button"
+                className="tg-btn-secondary text-xs flex-1"
+                disabled={disabled}
+                onClick={() => {
+                  const amount = Number(
+                    prompt("Корректировка баланса (±)") || 0
+                  );
+                  if (amount)
+                    void onAction({
+                      action: "user_adjust",
+                      id: u.id,
+                      amount,
+                    });
+                }}
+              >
+                Баланс ±
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

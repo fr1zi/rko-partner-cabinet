@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { formatMoney } from "@/lib/bot/users";
-import { ownerMarginFromPayouts } from "@/lib/productDefaults";
+import {
+  isAdminRefAttribution,
+  ownerMarginFromPayouts,
+} from "@/lib/productDefaults";
+import { ensureHoldColumn } from "@/lib/bot/leads";
 
 export type LeaderboardEntry = {
   rank: number;
@@ -120,6 +124,8 @@ export async function getTrafferLeaderboard(
         referrerId: { in: ids },
         status: { in: ["paid", "approved", "awaiting_payout"] },
         createdAt: { gte: since },
+        // Admin-ref leads store premiumAmount=0 — exclude from traffer ranking
+        NOT: { premiumAmount: 0 },
       },
       _count: { _all: true },
     }),
@@ -188,23 +194,34 @@ export async function resetLeaderboardPeriod() {
   });
 }
 
-/** Sum company margin on paid leads from 10/45/45 inverse. */
+/** Sum company margin on paid leads (45% normal, 55% admin-ref). */
 export async function getCompanyProfit(): Promise<{
   companyProfit: number;
   companyProfitLabel: string;
   paidLeads: number;
 }> {
+  await ensureHoldColumn();
   const leads = await prisma.botLead.findMany({
     where: { status: "paid" },
     include: {
       product: { select: { reward: true, subscriberPrice: true } },
+      referrer: { select: { role: true } },
+      client: { select: { inviteLinkName: true } },
     },
   });
 
   let profit = 0;
   for (const l of leads) {
+    const adminRef = isAdminRefAttribution({
+      referrerId: l.referrerId,
+      referrerRole: l.referrer?.role,
+      inviteLinkName: l.client.inviteLinkName,
+    });
     const sub = l.subscriberAmount ?? l.product.subscriberPrice ?? 0;
-    const prem = l.premiumAmount ?? l.product.reward ?? 0;
+    // Admin-ref: traffer leg is 0 so owner margin uses 55% of CPA
+    const prem = adminRef
+      ? 0
+      : l.premiumAmount ?? l.product.reward ?? 0;
     profit += ownerMarginFromPayouts(sub, prem);
   }
 

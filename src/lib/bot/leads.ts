@@ -1,7 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/telegram";
 import { formatMoney } from "@/lib/bot/users";
-import { resolveProductPayouts } from "@/lib/productDefaults";
+import {
+  isAdminRefAttribution,
+  resolveProductPayouts,
+} from "@/lib/productDefaults";
 
 export const LEAD_STATUSES = [
   "processing",
@@ -82,6 +85,58 @@ export async function creditOnce(opts: {
         userId: opts.userId,
         amount: opts.amount,
         type: opts.type,
+        leadId: opts.leadId,
+        comment: opts.comment,
+      },
+    }),
+  ]);
+  if (opts.telegramId && opts.notify) {
+    try {
+      await sendMessage(opts.telegramId, opts.notify);
+    } catch {
+      /* blocked */
+    }
+  }
+  return true;
+}
+
+/** Reverse a prior credit_lead / credit_sub for a lead (idempotent). */
+async function reverseCreditOnce(opts: {
+  userId: string;
+  leadId: string;
+  creditType: string;
+  reverseType: string;
+  comment: string;
+  telegramId?: string | null;
+  notify?: string;
+}) {
+  const credit = await prisma.ledgerTx.findFirst({
+    where: {
+      leadId: opts.leadId,
+      type: opts.creditType,
+      userId: opts.userId,
+    },
+  });
+  if (!credit || !(Number(credit.amount) > 0)) return false;
+  const already = await prisma.ledgerTx.findFirst({
+    where: {
+      leadId: opts.leadId,
+      type: opts.reverseType,
+      userId: opts.userId,
+    },
+  });
+  if (already) return false;
+  const amt = Math.abs(Number(credit.amount));
+  await prisma.$transaction([
+    prisma.botUser.update({
+      where: { id: opts.userId },
+      data: { balance: { decrement: amt } },
+    }),
+    prisma.ledgerTx.create({
+      data: {
+        userId: opts.userId,
+        amount: -amt,
+        type: opts.reverseType,
         leadId: opts.leadId,
         comment: opts.comment,
       },
@@ -266,16 +321,22 @@ export async function setLeadStatus(opts: {
   if (!full) return { error: "not found" as const };
 
   const prev = normalizeLeadStatus(full.status);
+  const adminRef = isAdminRefAttribution({
+    referrerId: full.referrerId,
+    referrerRole: full.referrer?.role,
+    inviteLinkName: full.client.inviteLinkName,
+  });
   const split = resolveProductPayouts(
     full.product.subscriberPrice,
-    full.product.reward
+    full.product.reward,
+    { adminRef }
   );
   let subAmount =
     opts.subscriberAmount !== undefined && Number.isFinite(opts.subscriberAmount)
       ? Math.max(0, Number(opts.subscriberAmount))
       : full.subscriberAmount ?? split.subscriber;
-  let premAmount = full.premiumAmount ?? split.traffer;
-  // Admin left the old full CPA in the field — apply 10/45/45.
+  let premAmount = adminRef ? 0 : full.premiumAmount ?? split.traffer;
+  // Admin left the old full CPA in the field — apply split (10/45/45 or 0/45/55).
   if (
     split.legacy &&
     opts.subscriberAmount !== undefined &&
@@ -284,6 +345,7 @@ export async function setLeadStatus(opts: {
     subAmount = split.subscriber;
     premAmount = split.traffer;
   }
+  if (adminRef) premAmount = 0;
 
   const data: {
     status: string;
@@ -306,7 +368,13 @@ export async function setLeadStatus(opts: {
     (await orderLineCount(full.orderId)) > 1 && Boolean(full.orderId);
 
   if (next === "awaiting_payout" || next === "paid") {
-    if (full.referrerId && premAmount) {
+    // Admin-ref / admin referrer: no traffer credit (owner keeps 55%, not on leaderboard)
+    const canCreditTraffer =
+      !adminRef &&
+      Boolean(full.referrerId) &&
+      premAmount > 0 &&
+      (full.referrer?.role || "").toLowerCase() !== "admin";
+    if (canCreditTraffer && full.referrerId) {
       await creditOnce({
         userId: full.referrerId,
         amount: premAmount,
@@ -392,5 +460,83 @@ export async function setLeadStatus(opts: {
     }
   }
 
+  return { ok: true as const };
+}
+
+/**
+ * Soft-remove a product line from a чек: status rejected + adminComment,
+ * reverse any traffer/subscriber credits, DM the client with the reason.
+ */
+export async function removeOrderLine(opts: {
+  leadId: string;
+  reason: string;
+}) {
+  await ensureHoldColumn();
+  const reason = String(opts.reason || "").trim();
+  if (!reason) {
+    return { error: "укажите причину" as const };
+  }
+
+  const full = await prisma.botLead.findUnique({
+    where: { id: opts.leadId },
+    include: { product: true, referrer: true, client: true },
+  });
+  if (!full) return { error: "not found" as const };
+
+  const prev = normalizeLeadStatus(full.status);
+  const productLabel = full.product.bank
+    ? `${full.product.title} · ${full.product.bank}`
+    : full.product.title;
+  const comment = `Удалено из чека: ${reason}`;
+
+  if (prev !== "rejected") {
+    await prisma.botLead.update({
+      where: { id: full.id },
+      data: {
+        status: "rejected",
+        adminComment: comment,
+        holdUntilOrderComplete: false,
+      },
+    });
+  } else {
+    await prisma.botLead.update({
+      where: { id: full.id },
+      data: { adminComment: comment, holdUntilOrderComplete: false },
+    });
+  }
+
+  // Reverse traffer premium if already credited
+  if (full.referrerId) {
+    await reverseCreditOnce({
+      userId: full.referrerId,
+      leadId: full.id,
+      creditType: "credit_lead",
+      reverseType: "debit_reverse_lead",
+      comment: `Сторно премии: ${productLabel}`,
+      telegramId: full.referrer?.telegramId,
+      notify: `↩️ Премия по «${productLabel}» отменена — позицию удалили из чека.`,
+    });
+  }
+
+  // Reverse subscriber credit if already paid out
+  await reverseCreditOnce({
+    userId: full.clientId,
+    leadId: full.id,
+    creditType: "credit_sub",
+    reverseType: "debit_reverse_sub",
+    comment: `Сторно выплаты: ${productLabel}`,
+  });
+
+  try {
+    await sendMessage(
+      full.client.telegramId,
+      `🗑 Позиция удалена из вашего чека: ${productLabel}.\n` +
+        `Причина: ${reason}`
+    );
+  } catch {
+    /* blocked */
+  }
+
+  await maybeAutoReleaseOrder(full.orderId);
   return { ok: true as const };
 }
