@@ -164,10 +164,12 @@ export async function resolveUserShort(short: string) {
   return all.find((u) => u.id.startsWith(short));
 }
 
-let productsEnsured = false;
+/** Bump to force a one-shot re-apply of catalog 10/45/45 on warm instances. */
+const CATALOG_SYNC_VERSION = 3;
+let productsEnsuredVersion = 0;
 
 export async function ensureBotProducts(): Promise<void> {
-  if (productsEnsured) return;
+  if (productsEnsuredVersion === CATALOG_SYNC_VERSION) return;
   try {
     const catalog = catalogEntries();
 
@@ -182,24 +184,16 @@ export async function ensureBotProducts(): Promise<void> {
         where: { title: entry.title, bank: entry.bank },
       });
       if (existing) {
-        // Apply 10/45/45 catalog split when still on legacy equal prices
-        // (reward === subscriberPrice) or missing subscriber price.
-        // Custom admin overrides (unequal prices) are left alone.
-        const legacyEqual =
-          existing.reward === existing.subscriberPrice ||
-          existing.subscriberPrice <= 0;
+        // Always re-apply catalog split (10% traffer / 45% subscriber).
+        // Fixes stuck products like «Депозит для бизнеса» that never left legacy prices.
         await prisma.botProduct.update({
           where: { id: existing.id },
           data: {
             description: existing.description || entry.description,
             rewardType: "fixed",
             isActive: true,
-            ...(legacyEqual
-              ? {
-                  reward: entry.reward,
-                  subscriberPrice: entry.subscriberPrice,
-                }
-              : {}),
+            reward: entry.reward,
+            subscriberPrice: entry.subscriberPrice,
           },
         });
       } else {
@@ -218,9 +212,9 @@ export async function ensureBotProducts(): Promise<void> {
       }
     }
 
-    productsEnsured = true;
+    productsEnsuredVersion = CATALOG_SYNC_VERSION;
   } catch (e) {
-    productsEnsured = false;
+    productsEnsuredVersion = 0;
     throw e;
   }
 }
