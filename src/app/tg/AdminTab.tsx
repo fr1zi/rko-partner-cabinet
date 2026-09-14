@@ -1444,6 +1444,7 @@ function AdminLeadsPanel({
   const [restorePanelOrderId, setRestorePanelOrderId] = useState<string | null>(
     null
   );
+  const [closedDetailKey, setClosedDetailKey] = useState<string | null>(null);
 
   const closedOrderIds = useMemo(() => {
     const byOrder = new Map<string, AdminLeadRow[]>();
@@ -1650,8 +1651,9 @@ function AdminLeadsPanel({
                 .filter(Boolean)
                 .sort()
                 .at(-1) || null;
+            const detailOpen = closedDetailKey === g.key;
             return (
-              <div key={g.key} className="tg-card space-y-1">
+              <div key={g.key} className="tg-card space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <p className="tg-card-title">{who}</p>
                   <span className="tg-status tg-status-paid shrink-0">
@@ -1670,6 +1672,72 @@ function AdminLeadsPanel({
                 <p className="text-sm font-medium tabular-nums">
                   наша {money(ourSum)} · подписчику {money(subSum)}
                 </p>
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs w-full"
+                  onClick={() =>
+                    setClosedDetailKey((cur) =>
+                      cur === g.key ? null : g.key
+                    )
+                  }
+                >
+                  {detailOpen ? "Свернуть" : "Подробнее"}
+                </button>
+                {detailOpen ? (
+                  <div className="space-y-3 pt-1 border-t border-white/10">
+                    {head.fullName &&
+                    !String(head.fullName).startsWith("@") ? (
+                      <p className="tg-muted text-xs">
+                        ФИО в заявке: {head.fullName}
+                      </p>
+                    ) : null}
+                    <p className="tg-muted text-xs">рефка: {refName}</p>
+                    {mainLines.map((l) => {
+                      const split = leadLineSplit(l);
+                      const st = normalizeLeadSt(l.status);
+                      const label = formatProductLabel(
+                        l.product.title,
+                        l.product.bank
+                      );
+                      return (
+                        <div
+                          key={l.id}
+                          className="rounded-xl border border-white/5 p-3 space-y-1"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-medium">{label}</p>
+                            <span
+                              className={`tg-status tg-status-${st} shrink-0`}
+                            >
+                              {statusLabel(st)}
+                            </span>
+                          </div>
+                          {l.phone ? (
+                            <p className="tg-muted text-xs">{l.phone}</p>
+                          ) : null}
+                          <p className="tg-muted text-xs tabular-nums">
+                            подписчику {money(split.subscriber)} · нам{" "}
+                            {money(split.owner)}
+                            {split.traffer > 0
+                              ? ` · траффер ${money(split.traffer)}`
+                              : ""}
+                          </p>
+                          {l.adminComment ? (
+                            <p className="tg-muted text-xs">{l.adminComment}</p>
+                          ) : null}
+                          {l.createdAt ? (
+                            <p className="tg-muted text-xs">
+                              {formatDate(l.createdAt)}
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                    <p className="text-sm font-medium tabular-nums">
+                      Итог: наша {money(ourSum)} · подписчику {money(subSum)}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             );
           }
