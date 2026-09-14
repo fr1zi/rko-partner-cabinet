@@ -7,8 +7,6 @@ import { sendMessage, sendToAdmins } from "@/lib/telegram";
 import {
   supportDmUrl,
   normalizeLeadStatus,
-  claimReadyOrderLines,
-  holdOrderUntilComplete,
   ensureHoldColumn,
 } from "@/lib/bot/leads";
 import { getTrafferLeaderboard } from "@/lib/bot/leaderboard";
@@ -292,9 +290,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
-    const receipt = formatOrderReceipt(result.lines);
+    const receipt = formatOrderReceipt(result.lines, { html: true });
     await sendToAdmins(
-      `📥 Новый чек (в обработке)\nКлиент: ${clientLabel}\nЧек: ${result.orderId}\n${receipt}\nЗаявок: ${result.created.length}`
+      `📥 Новый чек (в обработке)\nКлиент: ${clientLabel}\nЧек: ${result.orderId}\n${receipt}\nПозиций: ${result.created.length}`
     );
     if (user.referrerId) {
       const ref = await prisma.botUser.findUnique({
@@ -315,42 +313,11 @@ export async function POST(req: NextRequest) {
       ok: true,
       orderId: result.orderId,
       created: result.created.length,
+      requested: result.requested,
     });
   }
 
-  if (action === "claim_ready") {
-    const orderId = String(body.orderId || "");
-    if (!orderId) {
-      return NextResponse.json({ error: "нет orderId" }, { status: 400 });
-    }
-    const result = await claimReadyOrderLines({
-      clientId: user.id,
-      orderId,
-    });
-    if ("error" in result) {
-      return NextResponse.json({ error: result.error }, { status: 400 });
-    }
-    return NextResponse.json({
-      ok: true,
-      claimed: result.claimed,
-      amount: result.amount,
-    });
-  }
-
-  if (action === "wait_full_order") {
-    const orderId = String(body.orderId || "");
-    if (!orderId) {
-      return NextResponse.json({ error: "нет orderId" }, { status: 400 });
-    }
-    const result = await holdOrderUntilComplete({
-      clientId: user.id,
-      orderId,
-    });
-    if ("error" in result) {
-      return NextResponse.json({ error: result.error }, { status: 400 });
-    }
-    return NextResponse.json({ ok: true, held: result.held });
-  }
+  // claim_ready / wait_full_order removed — unsafe UX; payouts auto-credit per line
 
   return NextResponse.json({ error: "unknown action" }, { status: 400 });
 }

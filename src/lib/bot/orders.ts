@@ -18,6 +18,14 @@ async function ensureOrderIdColumn() {
   }
 }
 
+/** Escape for Telegram HTML parse_mode so multi-line receipts never fail silently. */
+export function escapeTgHtml(s: string) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 export type OrderLineInput = {
   productId: string;
 };
@@ -32,6 +40,7 @@ export async function createProductOrder(opts: {
   adminComment?: string;
 }) {
   await ensureOrderIdColumn();
+  // Preserve caller order; Set keeps insertion order
   const ids = Array.from(
     new Set(opts.productIds.map(String).filter(Boolean))
   );
@@ -39,9 +48,15 @@ export async function createProductOrder(opts: {
     return { error: "нет продуктов" as const };
   }
 
-  const products = await prisma.botProduct.findMany({
+  const found = await prisma.botProduct.findMany({
     where: { id: { in: ids }, isActive: true },
   });
+  // Map by id — Prisma findMany order is undefined
+  const byId = new Map(found.map((p) => [p.id, p]));
+  const products = ids
+    .map((id) => byId.get(id))
+    .filter((p): p is (typeof found)[number] => Boolean(p));
+
   if (products.length === 0) {
     return { error: "продукты недоступны" as const };
   }
@@ -49,7 +64,10 @@ export async function createProductOrder(opts: {
   const orderId = createId();
   const created: string[] = [];
   const lines: Array<{ title: string; bank: string }> = [];
+  const skippedInactive = ids.filter((id) => !byId.has(id));
+  const skippedDup: string[] = [];
 
+  // Sequential creates in input order (same orderId groups the чек)
   for (const product of products) {
     const dup = await prisma.botLead.findFirst({
       where: {
@@ -58,7 +76,10 @@ export async function createProductOrder(opts: {
         status: { not: "rejected" },
       },
     });
-    if (dup) continue;
+    if (dup) {
+      skippedDup.push(product.id);
+      continue;
+    }
 
     const lead = await prisma.botLead.create({
       data: {
@@ -80,16 +101,28 @@ export async function createProductOrder(opts: {
     return { error: "заявки по выбранным продуктам уже есть" as const };
   }
 
-  return { orderId, created, lines };
+  return {
+    orderId,
+    created,
+    lines,
+    skippedInactive,
+    skippedDup,
+    requested: ids.length,
+  };
 }
 
 export function formatOrderReceipt(
-  lines: Array<{ title: string; bank?: string | null; qty?: number }>
+  lines: Array<{ title: string; bank?: string | null; qty?: number }>,
+  opts?: { html?: boolean }
 ) {
+  const html = opts?.html !== false;
   return lines
-    .map((l) => {
-      const name = l.bank ? `${l.title} · ${l.bank}` : l.title;
-      return `${name} ×${l.qty ?? 1}`;
+    .map((l, i) => {
+      const rawName = l.bank ? `${l.title} · ${l.bank}` : l.title;
+      const name = html ? escapeTgHtml(rawName) : rawName;
+      const qty = l.qty ?? 1;
+      // ASCII "x" avoids rare HTML/client glitches with "×" on long messages
+      return `${i + 1}. ${name} x${qty}`;
     })
     .join("\n");
 }

@@ -244,10 +244,13 @@ export default function TelegramMiniAppPage() {
       setMsg("Демо: заявки только из бота");
       return;
     }
-    const ids = Array.from(new Set(productIds.map(String).filter(Boolean)));
+    // Snapshot + dedupe; preserve selection order for the чек
+    const ids = Array.from(
+      new Set(productIds.map(String).filter(Boolean))
+    );
     if (ids.length === 0) return;
     setMsg("");
-    setApplyingId(ids.length === 1 ? ids[0] : "batch");
+    setApplyingId(ids.length === 1 ? ids[0]! : "batch");
     try {
       const res = await fetch("/api/tg/cabinet", {
         method: "POST",
@@ -263,9 +266,10 @@ export default function TelegramMiniAppPage() {
         setMsg(data.error || "Ошибка");
         return;
       }
+      const n = Number(data.created) || ids.length;
       setMsg(
-        ids.length > 1
-          ? `Чек отправлен (${data.created || ids.length} поз.), статус «в обработке»`
+        n > 1
+          ? `Чек отправлен (${n} поз.), статус «в обработке»`
           : "Заявка отправлена, статус «в обработке»"
       );
       await loadCabinet();
@@ -275,64 +279,8 @@ export default function TelegramMiniAppPage() {
   }
 
   async function applyProduct(productId: string | string[]) {
-    const ids = Array.isArray(productId) ? productId : [productId];
+    const ids = Array.isArray(productId) ? [...productId] : [productId];
     await applyProducts(ids);
-  }
-
-  async function claimReady(orderId: string) {
-    if (isDemo) {
-      setMsg("Демо: начисления только из бота");
-      return;
-    }
-    setMsg("");
-    setApplyingId("claim:" + orderId);
-    try {
-      const res = await fetch("/api/tg/cabinet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ action: "claim_ready", orderId }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setMsg(data.error || "Ошибка");
-        return;
-      }
-      setMsg(
-        data.amount
-          ? `Начислено ${Math.round(data.amount).toLocaleString("ru-RU")} ₽`
-          : "Готовое забрано"
-      );
-      await loadCabinet();
-    } finally {
-      setApplyingId(null);
-    }
-  }
-
-  async function waitFullOrder(orderId: string) {
-    if (isDemo) {
-      setMsg("Демо: только из бота");
-      return;
-    }
-    setMsg("");
-    setApplyingId("wait:" + orderId);
-    try {
-      const res = await fetch("/api/tg/cabinet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ action: "wait_full_order", orderId }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setMsg(data.error || "Ошибка");
-        return;
-      }
-      setMsg("Ждём весь чек — начислим, когда все позиции будут готовы");
-      await loadCabinet();
-    } finally {
-      setApplyingId(null);
-    }
   }
 
   async function adminAction(body: Record<string, unknown>) {
@@ -481,13 +429,6 @@ export default function TelegramMiniAppPage() {
                           }
                         | undefined) || null
                     }
-                    onClaimReady={(orderId) => void claimReady(orderId)}
-                    onWaitFullOrder={(orderId) => void waitFullOrder(orderId)}
-                    claimBusy={Boolean(
-                      applyingId &&
-                        (applyingId.startsWith("claim:") ||
-                          applyingId.startsWith("wait:"))
-                    )}
                   />
                 ) : null}
 

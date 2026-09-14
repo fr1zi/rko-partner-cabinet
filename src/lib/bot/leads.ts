@@ -161,11 +161,6 @@ function isClaimableStatus(status: string) {
   return normalizeLeadStatus(status) === "awaiting_payout";
 }
 
-async function orderLineCount(orderId: string | null | undefined) {
-  if (!orderId) return 1;
-  return prisma.botLead.count({ where: { orderId } });
-}
-
 /** Credit subscriber for one lead line and mark paid (idempotent via creditOnce). */
 export async function creditSubscriberLine(lead: {
   id: string;
@@ -364,9 +359,6 @@ export async function setLeadStatus(opts: {
 
   await prisma.botLead.update({ where: { id: full.id }, data });
 
-  const multi =
-    (await orderLineCount(full.orderId)) > 1 && Boolean(full.orderId);
-
   if (next === "awaiting_payout" || next === "paid") {
     // Admin-ref / admin referrer: no traffer credit (owner keeps 55%, not on leaderboard)
     const canCreditTraffer =
@@ -386,13 +378,9 @@ export async function setLeadStatus(opts: {
       });
     }
 
-    // Multi-line чек: defer subscriber credit on awaiting_payout (claim / wait UX).
-    // Admin «Выплачено» (paid) still credits immediately.
-    // Single-line: keep auto-credit on awaiting_payout/paid.
-    const shouldCreditSub =
-      Boolean(subAmount) && (!multi || next === "paid");
-
-    if (shouldCreditSub) {
+    // Always credit subscriber immediately (same as single-line).
+    // Multi-line hold / claim-ready UX removed as unsafe.
+    if (subAmount) {
       await creditOnce({
         userId: full.clientId,
         amount: subAmount,
@@ -406,23 +394,10 @@ export async function setLeadStatus(opts: {
             ? `Статус: выплачено.`
             : `Статус: ждём выплату. Можно написать в ЛС или оставить заявку на вывод в кабинете.`),
       });
-      if (next === "paid") {
-        await prisma.botLead.update({
-          where: { id: full.id },
-          data: { holdUntilOrderComplete: false },
-        });
-      }
-    } else if (multi && next === "awaiting_payout" && subAmount) {
-      try {
-        await sendMessage(
-          full.client.telegramId,
-          `🔔 ${full.product.title}: готово ${formatMoney(subAmount)}.\n` +
-            `В чеке ещё есть позиции — заберите готовое сейчас или ждите весь чек в кабинете.`
-        );
-      } catch {
-        /* blocked */
-      }
-      await maybeAutoReleaseOrder(full.orderId);
+      await prisma.botLead.update({
+        where: { id: full.id },
+        data: { holdUntilOrderComplete: false },
+      });
     }
   }
 
@@ -445,11 +420,9 @@ export async function setLeadStatus(opts: {
         /* blocked */
       }
     }
-    // Rejecting a line may complete the order for held siblings
-    await maybeAutoReleaseOrder(full.orderId);
   }
 
-  if (next === "paid" && prev !== "paid" && !multi) {
+  if (next === "paid" && prev !== "paid") {
     try {
       await sendMessage(
         full.client.telegramId,

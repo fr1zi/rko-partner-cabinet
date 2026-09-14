@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { formatMoney } from "@/lib/bot/users";
 import {
+  estimateBankCpa,
   isAdminRefAttribution,
   ownerMarginFromPayouts,
 } from "@/lib/productDefaults";
@@ -229,5 +230,205 @@ export async function getCompanyProfit(): Promise<{
     companyProfit: profit,
     companyProfitLabel: formatMoney(profit),
     paidLeads: leads.length,
+  };
+}
+
+function parseMonthBounds(month: string): { start: Date; end: Date } | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(month || "").trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  if (!Number.isFinite(y) || mo < 1 || mo > 12) return null;
+  const start = new Date(y, mo - 1, 1, 0, 0, 0, 0);
+  const end = new Date(y, mo, 1, 0, 0, 0, 0);
+  return { start, end };
+}
+
+export function currentYearMonth(d = new Date()): string {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${mo}`;
+}
+
+export type TaxReportRow = {
+  id: string;
+  date: string;
+  orderId: string | null;
+  client: string;
+  product: string;
+  bankCpa: number;
+  subscriberPayout: number;
+  trafferPayout: number;
+  companyProfit: number;
+  status: string;
+  refType: "admin" | "traffer";
+};
+
+export type TaxReportSummary = {
+  bankCpa: number;
+  bankCpaLabel: string;
+  subscriberPayouts: number;
+  subscriberPayoutsLabel: string;
+  trafferPayouts: number;
+  trafferPayoutsLabel: string;
+  companyProfit: number;
+  companyProfitLabel: string;
+  paidPositions: number;
+  withdrawalsPaid: number;
+  withdrawalsPaidLabel: string;
+  adminRefOwner: number;
+  adminRefOwnerLabel: string;
+};
+
+export type TaxReport = {
+  month: string;
+  summary: TaxReportSummary;
+  rows: TaxReportRow[];
+};
+
+/**
+ * Monthly financial report for tax/accounting (Admin → Итоги).
+ * Leads: paid / awaiting_payout with approvedAt in month (fallback createdAt).
+ * Withdrawals: paid / approved with createdAt in month.
+ */
+export async function getTaxReport(month?: string): Promise<TaxReport> {
+  await ensureHoldColumn();
+  const ym = month && parseMonthBounds(month) ? month : currentYearMonth();
+  const bounds = parseMonthBounds(ym)!;
+  const { start, end } = bounds;
+
+  const [leads, withdrawals, creditSub, creditLead] = await Promise.all([
+    prisma.botLead.findMany({
+      where: {
+        status: { in: ["paid", "awaiting_payout"] },
+        OR: [
+          { approvedAt: { gte: start, lt: end } },
+          { AND: [{ approvedAt: null }, { createdAt: { gte: start, lt: end } }] },
+        ],
+      },
+      include: {
+        product: {
+          select: {
+            title: true,
+            bank: true,
+            reward: true,
+            subscriberPrice: true,
+          },
+        },
+        referrer: { select: { role: true, username: true, telegramId: true } },
+        client: {
+          select: {
+            username: true,
+            telegramId: true,
+            inviteLinkName: true,
+            firstName: true,
+          },
+        },
+      },
+      orderBy: [{ approvedAt: "desc" }, { createdAt: "desc" }],
+      take: 2000,
+    }),
+    prisma.withdrawal.findMany({
+      where: {
+        status: { in: ["paid", "approved"] },
+        createdAt: { gte: start, lt: end },
+      },
+      select: { amount: true },
+    }),
+    prisma.ledgerTx.aggregate({
+      where: {
+        type: "credit_sub",
+        createdAt: { gte: start, lt: end },
+      },
+      _sum: { amount: true },
+    }),
+    prisma.ledgerTx.aggregate({
+      where: {
+        type: "credit_lead",
+        createdAt: { gte: start, lt: end },
+      },
+      _sum: { amount: true },
+    }),
+  ]);
+
+  let bankCpaSum = 0;
+  let subFromLeads = 0;
+  let trafferFromLeads = 0;
+  let companyProfit = 0;
+  let adminRefOwner = 0;
+  const rows: TaxReportRow[] = [];
+
+  for (const l of leads) {
+    const adminRef = isAdminRefAttribution({
+      referrerId: l.referrerId,
+      referrerRole: l.referrer?.role,
+      inviteLinkName: l.client.inviteLinkName,
+    });
+    const sub = Math.max(
+      0,
+      Number(l.subscriberAmount ?? l.product.subscriberPrice ?? 0) || 0
+    );
+    const prem = adminRef
+      ? 0
+      : Math.max(0, Number(l.premiumAmount ?? l.product.reward ?? 0) || 0);
+    const owner = ownerMarginFromPayouts(sub, prem);
+    const cpa =
+      estimateBankCpa(sub, prem) ||
+      Math.round(sub + prem + owner);
+
+    bankCpaSum += cpa;
+    subFromLeads += sub;
+    trafferFromLeads += prem;
+    companyProfit += owner;
+    if (adminRef) adminRefOwner += owner;
+
+    const when = l.approvedAt || l.createdAt;
+    const clientHandle = l.client.username
+      ? `@${String(l.client.username).replace(/^@/, "")}`
+      : l.client.firstName || l.client.telegramId;
+    const productLabel = l.product.bank
+      ? `${l.product.title} · ${l.product.bank}`
+      : l.product.title;
+
+    rows.push({
+      id: l.id,
+      date: when.toISOString().slice(0, 10),
+      orderId: l.orderId ?? null,
+      client: clientHandle,
+      product: productLabel,
+      bankCpa: cpa,
+      subscriberPayout: sub,
+      trafferPayout: prem,
+      companyProfit: owner,
+      status: l.status,
+      refType: adminRef ? "admin" : "traffer",
+    });
+  }
+
+  // Prefer ledger totals when present (actual credits); else lead amounts
+  const subLedger = creditSub._sum.amount || 0;
+  const leadLedger = creditLead._sum.amount || 0;
+  const subscriberPayouts = subLedger > 0 ? subLedger : subFromLeads;
+  const trafferPayouts = leadLedger > 0 ? leadLedger : trafferFromLeads;
+  const withdrawalsPaid = withdrawals.reduce((s, w) => s + (w.amount || 0), 0);
+
+  return {
+    month: ym,
+    summary: {
+      bankCpa: bankCpaSum,
+      bankCpaLabel: formatMoney(bankCpaSum),
+      subscriberPayouts,
+      subscriberPayoutsLabel: formatMoney(subscriberPayouts),
+      trafferPayouts,
+      trafferPayoutsLabel: formatMoney(trafferPayouts),
+      companyProfit,
+      companyProfitLabel: formatMoney(companyProfit),
+      paidPositions: leads.length,
+      withdrawalsPaid,
+      withdrawalsPaidLabel: formatMoney(withdrawalsPaid),
+      adminRefOwner,
+      adminRefOwnerLabel: formatMoney(adminRefOwner),
+    },
+    rows,
   };
 }

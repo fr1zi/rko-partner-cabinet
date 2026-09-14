@@ -20,6 +20,8 @@ import { setLeadStatus, removeOrderLine } from "@/lib/bot/leads";
 import {
   getCompanyProfit,
   getTrafferLeaderboard,
+  getTaxReport,
+  currentYearMonth,
   updateLeaderboardSettings,
   resetLeaderboardPeriod,
   metaFromSettings,
@@ -141,7 +143,10 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const [trafters, clients, leads, sum, audience, profit, lb] =
+  const monthParam =
+    req.nextUrl.searchParams.get("month") || currentYearMonth();
+
+  const [trafters, clients, leads, sum, audience, profit, lb, taxReport] =
     await Promise.all([
       prisma.botUser.count({
         where: { role: { in: ["traffer", "admin"] } },
@@ -157,6 +162,7 @@ export async function GET(req: NextRequest) {
       getChannelAudienceStats(true),
       getCompanyProfit(),
       getTrafferLeaderboard(10),
+      getTaxReport(monthParam),
     ]);
   return NextResponse.json({
     stats: {
@@ -171,6 +177,7 @@ export async function GET(req: NextRequest) {
       companyProfitLabel: profit.companyProfitLabel,
       paidLeads: profit.paidLeads,
     },
+    taxReport,
     leaderboard: lb.rows,
     leaderboardMeta: lb.meta,
   });

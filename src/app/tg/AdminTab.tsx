@@ -104,16 +104,14 @@ function AdminBody({
           <StatTile label="Клиенты" value={String(s.clients ?? 0)} />
           <StatTile label="Заявки" value={String(s.leads ?? 0)} />
           <StatTile
-            label="Начислено"
-            value={String(s.creditedLabel ?? "0")}
-            wide
-          />
-          <StatTile
             label="Прибыль компании"
             value={String(s.companyProfitLabel ?? "0")}
             wide
           />
         </div>
+        <TaxReportPanel
+          initial={(data.taxReport || null) as TaxReportState | null}
+        />
         <LeaderboardAdminPanel
           meta={(data.leaderboardMeta || null) as LeaderboardMetaState | null}
           rows={(data.leaderboard || []) as Array<{
@@ -331,7 +329,248 @@ function StatTile({
   );
 }
 
+type TaxReportRowState = {
+  id: string;
+  date: string;
+  orderId: string | null;
+  client: string;
+  product: string;
+  bankCpa: number;
+  subscriberPayout: number;
+  trafferPayout: number;
+  companyProfit: number;
+  status: string;
+  refType: "admin" | "traffer";
+};
 
+type TaxReportState = {
+  month: string;
+  summary: {
+    bankCpa: number;
+    bankCpaLabel: string;
+    subscriberPayouts: number;
+    subscriberPayoutsLabel: string;
+    trafferPayouts: number;
+    trafferPayoutsLabel: string;
+    companyProfit: number;
+    companyProfitLabel: string;
+    paidPositions: number;
+    withdrawalsPaid: number;
+    withdrawalsPaidLabel: string;
+    adminRefOwner: number;
+    adminRefOwnerLabel: string;
+  };
+  rows: TaxReportRowState[];
+};
+
+function defaultYearMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function downloadTaxCsv(report: TaxReportState) {
+  const header = [
+    "date",
+    "orderId",
+    "client",
+    "product",
+    "bank_cpa",
+    "subscriber_payout",
+    "traffer_payout",
+    "company_profit",
+    "status",
+    "ref_type",
+  ];
+  const lines = [header.join(",")];
+  for (const r of report.rows) {
+    const cells = [
+      r.date,
+      r.orderId || "",
+      r.client,
+      r.product,
+      String(r.bankCpa),
+      String(r.subscriberPayout),
+      String(r.trafferPayout),
+      String(r.companyProfit),
+      r.status,
+      r.refType,
+    ].map((c) => {
+      const s = String(c);
+      if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    });
+    lines.push(cells.join(","));
+  }
+  const blob = new Blob(["\uFEFF" + lines.join("\n")], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `tax-report-${report.month}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function TaxReportPanel({
+  initial,
+}: {
+  initial: TaxReportState | null;
+}) {
+  const [month, setMonth] = useState(
+    () => initial?.month || defaultYearMonth()
+  );
+  const [report, setReport] = useState<TaxReportState | null>(initial);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (initial?.month === month) {
+      setReport(initial);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/tg/bot-admin?tab=stats&month=${encodeURIComponent(month)}`,
+          { credentials: "include" }
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { taxReport?: TaxReportState };
+        if (!cancelled && data.taxReport) setReport(data.taxReport);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [month, initial]);
+
+  const s = report?.summary;
+
+  return (
+    <section className="tg-stack">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 className="tg-section-label">Отчёт за месяц</h3>
+          <p className="tg-muted text-xs mt-1">
+            Для бухгалтерии / налоговой. Оплаченные и «ждём выплату».
+          </p>
+        </div>
+        <label className="block space-y-1">
+          <span className="tg-muted text-xs">Месяц</span>
+          <input
+            className="tg-input"
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+          />
+        </label>
+      </div>
+
+      {loading && !report ? (
+        <div className="tg-empty">Загрузка отчёта…</div>
+      ) : !s ? (
+        <div className="tg-empty">Нет данных за месяц</div>
+      ) : (
+        <>
+          <div className="tg-stat-grid">
+            <StatTile
+              label="Банковский CPA / оборот"
+              value={s.bankCpaLabel}
+              wide
+            />
+            <StatTile
+              label="Выплаты подписчикам"
+              value={s.subscriberPayoutsLabel}
+            />
+            <StatTile
+              label="Выплаты трафферам"
+              value={s.trafferPayoutsLabel}
+            />
+            <StatTile
+              label="Прибыль компании"
+              value={s.companyProfitLabel}
+              wide
+            />
+            <StatTile
+              label="Оплаченных позиций"
+              value={String(s.paidPositions)}
+            />
+            <StatTile
+              label="Выводы выплаченные"
+              value={s.withdrawalsPaidLabel}
+            />
+            <StatTile
+              label="Рефка админов (нам 55%)"
+              value={s.adminRefOwnerLabel}
+              wide
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="tg-btn-primary text-sm"
+              disabled={!report || report.rows.length === 0}
+              onClick={() => report && downloadTaxCsv(report)}
+            >
+              Скачать CSV
+            </button>
+            {loading ? (
+              <span className="tg-muted text-xs self-center">Обновление…</span>
+            ) : null}
+          </div>
+
+          {report && report.rows.length > 0 ? (
+            <div
+              className="tg-table-wrap"
+              style={{ maxHeight: 360, overflowY: "auto" }}
+            >
+              <table className="tg-table">
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>Клиент</th>
+                    <th>Продукт</th>
+                    <th>CPA</th>
+                    <th>Подп.</th>
+                    <th>Траф</th>
+                    <th>Нам</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.rows.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.date}</td>
+                      <td>
+                        {r.client}
+                        {r.refType === "admin" ? (
+                          <span className="tg-muted"> · адм</span>
+                        ) : null}
+                      </td>
+                      <td>{r.product}</td>
+                      <td>{r.bankCpa}</td>
+                      <td>{r.subscriberPayout}</td>
+                      <td>{r.trafferPayout}</td>
+                      <td>{r.companyProfit}</td>
+                      <td>{statusLabel(r.status)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="tg-empty">Нет позиций за выбранный месяц</div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
 
 type AdminUserIssue = {
   id: string;

@@ -236,7 +236,8 @@ export function ProductsTab({
             className="tg-btn-primary w-full"
             disabled={disabled || applying}
             onClick={async () => {
-              await onApply(selected);
+              const ids = [...selected];
+              await onApply(ids);
               setSelected([]);
             }}
           >
