@@ -239,26 +239,96 @@ export default function TelegramMiniAppPage() {
     await loadCabinet();
   }
 
-  async function applyProduct(productId: string) {
+  async function applyProducts(productIds: string[]) {
     if (isDemo) {
       setMsg("Демо: заявки только из бота");
       return;
     }
+    const ids = Array.from(new Set(productIds.map(String).filter(Boolean)));
+    if (ids.length === 0) return;
     setMsg("");
-    setApplyingId(productId);
+    setApplyingId(ids.length === 1 ? ids[0] : "batch");
     try {
       const res = await fetch("/api/tg/cabinet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ action: "apply", productId }),
+        body: JSON.stringify({
+          action: "apply",
+          productIds: ids,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         setMsg(data.error || "Ошибка");
         return;
       }
-      setMsg("Заявка отправлена, статус «в обработке»");
+      setMsg(
+        ids.length > 1
+          ? `Чек отправлен (${data.created || ids.length} поз.), статус «в обработке»`
+          : "Заявка отправлена, статус «в обработке»"
+      );
+      await loadCabinet();
+    } finally {
+      setApplyingId(null);
+    }
+  }
+
+  async function applyProduct(productId: string | string[]) {
+    const ids = Array.isArray(productId) ? productId : [productId];
+    await applyProducts(ids);
+  }
+
+  async function claimReady(orderId: string) {
+    if (isDemo) {
+      setMsg("Демо: начисления только из бота");
+      return;
+    }
+    setMsg("");
+    setApplyingId("claim:" + orderId);
+    try {
+      const res = await fetch("/api/tg/cabinet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "claim_ready", orderId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg(data.error || "Ошибка");
+        return;
+      }
+      setMsg(
+        data.amount
+          ? `Начислено ${Math.round(data.amount).toLocaleString("ru-RU")} ₽`
+          : "Готовое забрано"
+      );
+      await loadCabinet();
+    } finally {
+      setApplyingId(null);
+    }
+  }
+
+  async function waitFullOrder(orderId: string) {
+    if (isDemo) {
+      setMsg("Демо: только из бота");
+      return;
+    }
+    setMsg("");
+    setApplyingId("wait:" + orderId);
+    try {
+      const res = await fetch("/api/tg/cabinet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "wait_full_order", orderId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg(data.error || "Ошибка");
+        return;
+      }
+      setMsg("Ждём весь чек — начислим, когда все позиции будут готовы");
       await loadCabinet();
     } finally {
       setApplyingId(null);
@@ -411,6 +481,13 @@ export default function TelegramMiniAppPage() {
                           }
                         | undefined) || null
                     }
+                    onClaimReady={(orderId) => void claimReady(orderId)}
+                    onWaitFullOrder={(orderId) => void waitFullOrder(orderId)}
+                    claimBusy={Boolean(
+                      applyingId &&
+                        (applyingId.startsWith("claim:") ||
+                          applyingId.startsWith("wait:"))
+                    )}
                   />
                 ) : null}
 
@@ -465,20 +542,12 @@ export default function TelegramMiniAppPage() {
                       (peopleData?.products as AdminProductOpt[] | undefined) ||
                       []
                     }
-                    onIssue={(userId, productId) =>
-                      void adminAction(
-                        productId === "all"
-                          ? {
-                              action: "issue_products",
-                              userId,
-                              productIds: "all",
-                            }
-                          : {
-                              action: "issue_products",
-                              userId,
-                              productId,
-                            }
-                      )
+                    onIssue={(userId, ids) =>
+                      void adminAction({
+                        action: "issue_products",
+                        userId,
+                        productIds: ids,
+                      })
                     }
                     disabled={isDemo}
                     loading={loading && !peopleData}

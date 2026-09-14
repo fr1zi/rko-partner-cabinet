@@ -25,7 +25,17 @@ export function supportDmUrl() {
   return `https://t.me/${raw}`;
 }
 
-async function creditOnce(opts: {
+export async function ensureHoldColumn() {
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "BotLead" ADD COLUMN IF NOT EXISTS "holdUntilOrderComplete" BOOLEAN NOT NULL DEFAULT false`
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function creditOnce(opts: {
   userId: string;
   amount: number;
   leadId: string;
@@ -34,11 +44,11 @@ async function creditOnce(opts: {
   telegramId?: string | null;
   notify?: string;
 }) {
-  if (!opts.amount) return;
+  if (!opts.amount) return false;
   const existing = await prisma.ledgerTx.findFirst({
     where: { leadId: opts.leadId, type: opts.type, userId: opts.userId },
   });
-  if (existing) return;
+  if (existing) return false;
   await prisma.$transaction([
     prisma.botUser.update({
       where: { id: opts.userId },
@@ -61,6 +71,158 @@ async function creditOnce(opts: {
       /* blocked */
     }
   }
+  return true;
+}
+
+function isReadyStatus(status: string) {
+  const st = normalizeLeadStatus(status);
+  return st === "awaiting_payout" || st === "paid";
+}
+
+function isClaimableStatus(status: string) {
+  return normalizeLeadStatus(status) === "awaiting_payout";
+}
+
+async function orderLineCount(orderId: string | null | undefined) {
+  if (!orderId) return 1;
+  return prisma.botLead.count({ where: { orderId } });
+}
+
+/** Credit subscriber for one lead line and mark paid (idempotent via creditOnce). */
+export async function creditSubscriberLine(lead: {
+  id: string;
+  clientId: string;
+  product: { title: string };
+  client: { telegramId: string };
+  subscriberAmount: number | null;
+}) {
+  const amount = Math.max(0, Number(lead.subscriberAmount || 0));
+  if (!amount) {
+    await prisma.botLead.update({
+      where: { id: lead.id },
+      data: { status: "paid", holdUntilOrderComplete: false },
+    });
+    return { credited: 0 };
+  }
+  const did = await creditOnce({
+    userId: lead.clientId,
+    amount,
+    leadId: lead.id,
+    type: "credit_sub",
+    comment: `Выплата ${lead.product.title}`,
+    telegramId: lead.client.telegramId,
+    notify:
+      `✅ ${lead.product.title}: вам ${formatMoney(amount)}.\n` +
+      `Начислено на баланс. Можно вывод в кабинете или ЛС.`,
+  });
+  await prisma.botLead.update({
+    where: { id: lead.id },
+    data: { status: "paid", holdUntilOrderComplete: false },
+  });
+  return { credited: did ? amount : 0 };
+}
+
+/** If every non-rejected line is ready and hold was set — auto-credit all unpaid ready lines. */
+export async function maybeAutoReleaseOrder(orderId: string | null | undefined) {
+  if (!orderId) return;
+  await ensureHoldColumn();
+  const lines = await prisma.botLead.findMany({
+    where: { orderId },
+    include: { product: true, client: true },
+  });
+  if (lines.length <= 1) return;
+
+  const active = lines.filter(
+    (l) => normalizeLeadStatus(l.status) !== "rejected"
+  );
+  if (active.length === 0) return;
+
+  const allReady = active.every((l) => isReadyStatus(l.status));
+  if (!allReady) return;
+
+  const heldUnpaid = active.filter(
+    (l) =>
+      l.holdUntilOrderComplete &&
+      normalizeLeadStatus(l.status) === "awaiting_payout"
+  );
+  // Also release if all are ready and any were held, or if subscriber waited
+  if (heldUnpaid.length === 0) {
+    // No hold flag — do not auto-credit (user may still tap «Забрать»)
+    return;
+  }
+
+  let total = 0;
+  for (const lead of active) {
+    if (normalizeLeadStatus(lead.status) !== "awaiting_payout") continue;
+    const r = await creditSubscriberLine(lead);
+    total += r.credited;
+  }
+  if (total > 0) {
+    const client = active[0].client;
+    try {
+      await sendMessage(
+        client.telegramId,
+        `💸 Чек готов целиком: начислено ${formatMoney(total)}.`
+      );
+    } catch {
+      /* blocked */
+    }
+  }
+}
+
+export async function claimReadyOrderLines(opts: {
+  clientId: string;
+  orderId: string;
+}) {
+  await ensureHoldColumn();
+  const lines = await prisma.botLead.findMany({
+    where: { orderId: opts.orderId, clientId: opts.clientId },
+    include: { product: true, client: true },
+  });
+  if (lines.length === 0) return { error: "чек не найден" as const };
+
+  const ready = lines.filter((l) => isClaimableStatus(l.status));
+  if (ready.length === 0) {
+    return { error: "нет готовых позиций" as const };
+  }
+
+  let total = 0;
+  const claimed: string[] = [];
+  for (const lead of ready) {
+    const r = await creditSubscriberLine(lead);
+    total += r.credited;
+    claimed.push(lead.id);
+  }
+  return { ok: true as const, claimed: claimed.length, amount: total };
+}
+
+export async function holdOrderUntilComplete(opts: {
+  clientId: string;
+  orderId: string;
+}) {
+  await ensureHoldColumn();
+  const lines = await prisma.botLead.findMany({
+    where: { orderId: opts.orderId, clientId: opts.clientId },
+  });
+  if (lines.length === 0) return { error: "чек не найден" as const };
+  if (lines.length <= 1) {
+    return { error: "для одной позиции ожидание чека не нужно" as const };
+  }
+
+  const ready = lines.filter((l) => isClaimableStatus(l.status));
+  if (ready.length === 0) {
+    return { error: "нет готовых позиций" as const };
+  }
+
+  await prisma.botLead.updateMany({
+    where: { id: { in: ready.map((l) => l.id) } },
+    data: { holdUntilOrderComplete: true },
+  });
+
+  // If everything is already ready, release immediately
+  await maybeAutoReleaseOrder(opts.orderId);
+
+  return { ok: true as const, held: ready.length };
 }
 
 export async function setLeadStatus(opts: {
@@ -69,6 +231,7 @@ export async function setLeadStatus(opts: {
   subscriberAmount?: number;
   comment?: string;
 }) {
+  await ensureHoldColumn();
   const next = normalizeLeadStatus(opts.status) as string;
   if (!LEAD_STATUSES.includes(next as LeadStatus)) {
     return { error: "bad status" as const };
@@ -116,6 +279,9 @@ export async function setLeadStatus(opts: {
 
   await prisma.botLead.update({ where: { id: full.id }, data });
 
+  const multi =
+    (await orderLineCount(full.orderId)) > 1 && Boolean(full.orderId);
+
   if (next === "awaiting_payout" || next === "paid") {
     if (full.referrerId && premAmount) {
       await creditOnce({
@@ -128,7 +294,14 @@ export async function setLeadStatus(opts: {
         notify: `✅ ${full.product.title}: премия ${formatMoney(premAmount)}.`,
       });
     }
-    if (subAmount) {
+
+    // Multi-line чек: defer subscriber credit on awaiting_payout (claim / wait UX).
+    // Admin «Выплачено» (paid) still credits immediately.
+    // Single-line: keep auto-credit on awaiting_payout/paid.
+    const shouldCreditSub =
+      Boolean(subAmount) && (!multi || next === "paid");
+
+    if (shouldCreditSub) {
       await creditOnce({
         userId: full.clientId,
         amount: subAmount,
@@ -138,8 +311,27 @@ export async function setLeadStatus(opts: {
         telegramId: full.client.telegramId,
         notify:
           `✅ ${full.product.title}: вам ${formatMoney(subAmount)}.\n` +
-          `Статус: ждём выплату. Можно написать в ЛС или оставить заявку на вывод в кабинете.`,
+          (next === "paid"
+            ? `Статус: выплачено.`
+            : `Статус: ждём выплату. Можно написать в ЛС или оставить заявку на вывод в кабинете.`),
       });
+      if (next === "paid") {
+        await prisma.botLead.update({
+          where: { id: full.id },
+          data: { holdUntilOrderComplete: false },
+        });
+      }
+    } else if (multi && next === "awaiting_payout" && subAmount) {
+      try {
+        await sendMessage(
+          full.client.telegramId,
+          `🔔 ${full.product.title}: готово ${formatMoney(subAmount)}.\n` +
+            `В чеке ещё есть позиции — заберите готовое сейчас или ждите весь чек в кабинете.`
+        );
+      } catch {
+        /* blocked */
+      }
+      await maybeAutoReleaseOrder(full.orderId);
     }
   }
 
@@ -162,9 +354,11 @@ export async function setLeadStatus(opts: {
         /* blocked */
       }
     }
+    // Rejecting a line may complete the order for held siblings
+    await maybeAutoReleaseOrder(full.orderId);
   }
 
-  if (next === "paid" && prev !== "paid") {
+  if (next === "paid" && prev !== "paid" && !multi) {
     try {
       await sendMessage(
         full.client.telegramId,

@@ -33,6 +33,8 @@ export type CabinetData = {
     adminComment?: string | null;
     approvedAt?: string | null;
     createdAt: string;
+    orderId?: string | null;
+    holdUntilOrderComplete?: boolean;
   }>;
   stats: {
     clicks: number;
@@ -70,6 +72,7 @@ export type CabinetData = {
       status: string;
       product: string;
       premium: number;
+      orderId?: string | null;
     }>;
   }>;
   withdrawals: Array<{

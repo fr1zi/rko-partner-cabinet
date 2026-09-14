@@ -4,12 +4,19 @@ import { prisma } from "@/lib/prisma";
 import { refLinkFor, formatMoney, isHotProduct, ensureBotProducts } from "@/lib/bot/users";
 import { getChannelJoinUrl } from "@/lib/bot/adminInvite";
 import { sendMessage, sendToAdmins } from "@/lib/telegram";
-import { supportDmUrl, normalizeLeadStatus } from "@/lib/bot/leads";
+import {
+  supportDmUrl,
+  normalizeLeadStatus,
+  claimReadyOrderLines,
+  holdOrderUntilComplete,
+  ensureHoldColumn,
+} from "@/lib/bot/leads";
 import { getTrafferLeaderboard } from "@/lib/bot/leaderboard";
 import {
   estimateBankCpa,
   ownerMarginFromPayouts,
 } from "@/lib/productDefaults";
+import { createProductOrder, formatOrderReceipt } from "@/lib/bot/orders";
 
 async function requireBotUser() {
   const session = await getSession();
@@ -69,6 +76,7 @@ export async function GET() {
     take: 20,
   });
 
+  await ensureHoldColumn();
   const myLeads = await prisma.botLead.findMany({
     where: { clientId: user.id },
     include: { product: true },
@@ -111,6 +119,7 @@ export async function GET() {
           status: x.status,
           product: x.product.title,
           premium: x.product.reward,
+          orderId: x.orderId ?? null,
         })),
       };
     })
@@ -173,6 +182,8 @@ export async function GET() {
       adminComment: l.adminComment || null,
       approvedAt: l.approvedAt || null,
       createdAt: l.createdAt,
+      orderId: l.orderId ?? null,
+      holdUntilOrderComplete: Boolean(l.holdUntilOrderComplete),
     })),
     referrals: refStatuses,
     leads: leads.map((l) => ({
@@ -182,6 +193,7 @@ export async function GET() {
       client: l.client.username || l.client.telegramId,
       fullName: l.fullName,
       createdAt: l.createdAt,
+      orderId: l.orderId ?? null,
     })),
     withdrawals,
     txs,
@@ -248,53 +260,87 @@ export async function POST(req: NextRequest) {
 
 
   if (action === "apply") {
-    const productId = String(body.productId || "");
-    const product = await prisma.botProduct.findUnique({ where: { id: productId } });
-    if (!product || !product.isActive) {
-      return NextResponse.json({ error: "продукт недоступен" }, { status: 400 });
-    }
-    const existing = await prisma.botLead.findFirst({
-      where: {
-        clientId: user.id,
-        productId,
-        status: { not: "rejected" },
-      },
+    const productIds: string[] = Array.isArray(body.productIds)
+      ? body.productIds.map(String).filter(Boolean)
+      : body.productId
+        ? [String(body.productId)]
+        : [];
+    const fullName = user.username
+      ? `@${String(user.username).replace(/^@/, "")}`
+      : user.firstName || user.telegramId || "";
+    const clientLabel = user.username
+      ? `@${String(user.username).replace(/^@/, "")}`
+      : `id ${user.telegramId}`;
+
+    const result = await createProductOrder({
+      clientId: user.id,
+      referrerId: user.referrerId,
+      fullName,
+      phone: String(body.phone || ""),
+      productIds,
     });
-    if (existing) {
-      return NextResponse.json(
-        { error: "заявка по этому продукту уже есть" },
-        { status: 400 }
-      );
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
     }
-    const lead = await prisma.botLead.create({
-      data: {
-        clientId: user.id,
-        referrerId: user.referrerId,
-        productId,
-        fullName: user.username
-          ? `@${String(user.username).replace(/^@/, "")}`
-          : user.firstName || user.telegramId || "",
-        phone: String(body.phone || ""),
-        status: "processing",
-      },
-    });
+
+    const receipt = formatOrderReceipt(result.lines);
     await sendToAdmins(
-      `📥 Новая заявка (в обработке)\nКлиент: ${user.username ? `@${String(user.username).replace(/^@/, "")}` : `id ${user.telegramId}`}\nПродукт: ${product.bank ? `${product.title} · ${product.bank}` : product.title}\nID: ${lead.id}`
+      `📥 Новый чек (в обработке)\nКлиент: ${clientLabel}\nЧек: ${result.orderId}\n${receipt}\nЗаявок: ${result.created.length}`
     );
     if (user.referrerId) {
-      const ref = await prisma.botUser.findUnique({ where: { id: user.referrerId } });
+      const ref = await prisma.botUser.findUnique({
+        where: { id: user.referrerId },
+      });
       if (ref) {
         try {
           await sendMessage(
             ref.telegramId,
-            `🔔 Новая заявка от реферала ${user.username ? `@${String(user.username).replace(/^@/, "")}` : user.telegramId}: ${product.bank ? `${product.title} · ${product.bank}` : product.title}`
+            `🔔 Новый чек от реферала ${clientLabel}:\n${receipt}`
           );
         } catch {
           /* blocked */
         }
       }
     }
-    return NextResponse.json({ ok: true, id: lead.id });
+    return NextResponse.json({
+      ok: true,
+      orderId: result.orderId,
+      created: result.created.length,
+    });
+  }
+
+  if (action === "claim_ready") {
+    const orderId = String(body.orderId || "");
+    if (!orderId) {
+      return NextResponse.json({ error: "нет orderId" }, { status: 400 });
+    }
+    const result = await claimReadyOrderLines({
+      clientId: user.id,
+      orderId,
+    });
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+    return NextResponse.json({
+      ok: true,
+      claimed: result.claimed,
+      amount: result.amount,
+    });
+  }
+
+  if (action === "wait_full_order") {
+    const orderId = String(body.orderId || "");
+    if (!orderId) {
+      return NextResponse.json({ error: "нет orderId" }, { status: 400 });
+    }
+    const result = await holdOrderUntilComplete({
+      clientId: user.id,
+      orderId,
+    });
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true, held: result.held });
   }
 
   return NextResponse.json({ error: "unknown action" }, { status: 400 });

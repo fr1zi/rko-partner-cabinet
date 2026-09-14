@@ -3,7 +3,33 @@
 import { useState } from "react";
 import type { CabinetData, TgRole } from "./types";
 import { LeaderboardList } from "./Leaderboard";
-import { formatDate, isSubscriberClosedOrder, money, statusLabel } from "./utils";
+import { formatDate, money, statusLabel } from "./utils";
+
+type AppRow = NonNullable<CabinetData["applications"]>[number];
+
+function groupAppsByOrder(apps: AppRow[]) {
+  const groups: Array<{ key: string; orderId: string | null; lines: AppRow[] }> =
+    [];
+  const byOrder = new Map<string, AppRow[]>();
+  const singles: AppRow[] = [];
+  for (const a of apps) {
+    if (a.orderId) {
+      const list = byOrder.get(a.orderId) || [];
+      list.push(a);
+      byOrder.set(a.orderId, list);
+    } else {
+      singles.push(a);
+    }
+  }
+  for (const [orderId, lines] of Array.from(byOrder.entries())) {
+    groups.push({ key: orderId, orderId, lines });
+  }
+  for (const a of singles) {
+    groups.push({ key: a.id, orderId: null, lines: [a] });
+  }
+  return groups;
+}
+
 
 export type AdminHomeStats = {
   trafters?: number;
@@ -23,11 +49,17 @@ export function HomeTab({
   role,
   channelMember,
   adminStats,
+  onClaimReady,
+  onWaitFullOrder,
+  claimBusy,
 }: {
   data: CabinetData;
   role?: TgRole;
   channelMember?: boolean;
   adminStats?: AdminHomeStats | null;
+  onClaimReady?: (orderId: string) => void;
+  onWaitFullOrder?: (orderId: string) => void;
+  claimBusy?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const isSubscriber = role === "SUBSCRIBER";
@@ -108,16 +140,135 @@ export function HomeTab({
 
   if (isSubscriber) {
     const apps = data.applications || [];
-    const openApps = apps.filter((a) => !isSubscriberClosedOrder(a.status));
-    const closedApps = apps.filter((a) => isSubscriberClosedOrder(a.status));
+    const groups = groupAppsByOrder(apps);
+    const activeGroups = groups.filter((g) =>
+      g.lines.some((l) => l.status !== "paid" && l.status !== "rejected")
+    );
+    const archiveGroups = groups.filter((g) =>
+      g.lines.every((l) => l.status === "paid" || l.status === "rejected")
+    );
+
+    const ReceiptCard = ({
+      g,
+      archived,
+    }: {
+      g: ReturnType<typeof groupAppsByOrder>[number];
+      archived?: boolean;
+    }) => {
+      const multi = Boolean(g.orderId) && g.lines.length > 1;
+      const ready = g.lines.filter((a) => a.status === "awaiting_payout");
+      const readySum = ready.reduce(
+        (s, a) => s + Math.max(0, Number(a.subscriberAmount || 0)),
+        0
+      );
+      const hasProcessing = g.lines.some(
+        (a) =>
+          a.status === "processing" ||
+          a.status === "new" ||
+          a.status === "duplicate"
+      );
+      const holding = ready.some((a) => a.holdUntilOrderComplete);
+      const canClaimPartial = multi && ready.length > 0 && readySum > 0;
+      const showSupport = g.lines.some(
+        (a) => a.status === "awaiting_payout" || a.status === "paid"
+      );
+
+      return (
+        <article className="tg-card space-y-2">
+          {g.orderId ? (
+            <p className="tg-muted text-xs">
+              Чек · {g.lines.length} поз.
+              {holding ? " · ждём весь чек" : ""}
+            </p>
+          ) : null}
+          {g.lines.map((a) => (
+            <div key={a.id} className="space-y-1 border-b border-white/5 pb-2 last:border-0 last:pb-0">
+              <div className="flex items-start justify-between gap-2">
+                <p className="tg-card-title">{a.product} ×1</p>
+                <span className={`tg-status tg-status-${a.status}`}>
+                  {statusLabel(a.status)}
+                </span>
+              </div>
+              {a.subscriberAmount != null &&
+              (a.status === "awaiting_payout" || a.status === "paid") ? (
+                <p className="tg-muted text-sm">
+                  Выплата: {money(a.subscriberAmount)}
+                  {a.status === "paid"
+                    ? " · начислено"
+                    : a.holdUntilOrderComplete
+                      ? " · удерживается до всего чека"
+                      : " · готово"}
+                </p>
+              ) : null}
+              {a.adminComment ? (
+                <p className="tg-muted text-xs">
+                  Комментарий: {a.adminComment}
+                </p>
+              ) : null}
+              {a.approvedAt ? (
+                <p className="tg-muted text-xs">
+                  Обновлено: {formatDate(a.approvedAt)}
+                </p>
+              ) : a.createdAt ? (
+                <p className="tg-muted text-xs">{formatDate(a.createdAt)}</p>
+              ) : null}
+            </div>
+          ))}
+          {canClaimPartial && onClaimReady && g.orderId ? (
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                type="button"
+                className="tg-btn-primary w-full text-sm"
+                disabled={claimBusy}
+                onClick={() => onClaimReady(g.orderId!)}
+              >
+                {hasProcessing
+                  ? `Забрать готовое (${money(readySum)})`
+                  : `Забрать весь чек (${money(readySum)})`}
+              </button>
+              {hasProcessing && onWaitFullOrder ? (
+                holding ? (
+                  <p className="tg-muted text-xs text-center">
+                    Ожидаем остальные позиции — начислим сразу, когда чек
+                    будет готов целиком.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    className="tg-btn-secondary w-full text-sm"
+                    disabled={claimBusy}
+                    onClick={() => onWaitFullOrder(g.orderId!)}
+                  >
+                    Ждать весь чек
+                  </button>
+                )
+              ) : null}
+            </div>
+          ) : null}
+          {!multi && showSupport && !archived ? (
+            <div className="flex gap-2">
+              <a
+                className="tg-btn-secondary text-xs flex-1 text-center"
+                href={data.supportUrl || "https://t.me/f3n1byt666"}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Написать в ЛС
+              </a>
+            </div>
+          ) : null}
+        </article>
+      );
+    };
+
     return (
       <div className="tg-stack">
         <section className="tg-card">
           <h2 className="tg-card-title">Добро пожаловать</h2>
           <p className="tg-muted text-sm mt-2 leading-relaxed">
             Сначала напишите нам в ЛС, потом оставьте заявку на продукт.
-            Админ ставит статус и сумму. Когда ждём выплату — можно вывод
-            или снова ЛС.
+            В чеке у каждой позиции свой статус. Готовое можно забрать сразу
+            или дождаться всего чека.
           </p>
         </section>
         {!channelMember ? (
@@ -147,80 +298,27 @@ export function HomeTab({
         </section>
         <section>
           <h2 className="tg-section-label">Мои заявки</h2>
-          {openApps.length === 0 ? (
+          {activeGroups.length === 0 ? (
             <p className="tg-muted text-sm">
               Нет открытых — оставьте из «Продукты».
             </p>
           ) : (
             <div className="tg-stack">
-              {openApps.map((a) => (
-                <article key={a.id} className="tg-card space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="tg-card-title">{a.product}</p>
-                    <span className={`tg-status tg-status-${a.status}`}>
-                      {statusLabel(a.status)}
-                    </span>
-                  </div>
-                  {a.createdAt ? (
-                    <p className="tg-muted text-xs">{formatDate(a.createdAt)}</p>
-                  ) : null}
-                </article>
+              {activeGroups.map((g) => (
+                <ReceiptCard key={g.key} g={g} />
               ))}
             </div>
           )}
         </section>
         <section>
           <h2 className="tg-section-label">Закрытые заказы</h2>
-          {closedApps.length === 0 ? (
+          {archiveGroups.length === 0 ? (
             <p className="tg-muted text-sm">Пока нет закрытых заказов</p>
           ) : (
             <div className="tg-stack">
-              {closedApps.map((a) => {
-                const canClaim =
-                  a.status === "awaiting_payout" || a.status === "paid";
-                return (
-                  <article key={a.id} className="tg-card space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="tg-card-title">{a.product}</p>
-                      <span className={`tg-status tg-status-${a.status}`}>
-                        {statusLabel(a.status)}
-                      </span>
-                    </div>
-                    {a.subscriberAmount != null ? (
-                      <p className="tg-muted text-sm">
-                        Выплата: {money(a.subscriberAmount)}
-                        {a.status === "paid"
-                          ? " · начислено"
-                          : a.status === "awaiting_payout"
-                            ? " · ждём перевод"
-                            : ""}
-                      </p>
-                    ) : null}
-                    {a.adminComment ? (
-                      <p className="tg-muted text-xs">Комментарий: {a.adminComment}</p>
-                    ) : null}
-                    {a.approvedAt ? (
-                      <p className="tg-muted text-xs">
-                        Обновлено: {formatDate(a.approvedAt)}
-                      </p>
-                    ) : a.createdAt ? (
-                      <p className="tg-muted text-xs">{formatDate(a.createdAt)}</p>
-                    ) : null}
-                    {canClaim ? (
-                      <div className="flex gap-2">
-                        <a
-                          className="tg-btn-secondary text-xs flex-1 text-center"
-                          href={data.supportUrl || "https://t.me/f3n1byt666"}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Написать в ЛС
-                        </a>
-                      </div>
-                    ) : null}
-                  </article>
-                );
-              })}
+              {archiveGroups.map((g) => (
+                <ReceiptCard key={g.key} g={g} archived />
+              ))}
             </div>
           )}
         </section>

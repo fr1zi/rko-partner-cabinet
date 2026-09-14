@@ -24,6 +24,8 @@ import {
   resetLeaderboardPeriod,
   metaFromSettings,
 } from "@/lib/bot/leaderboard";
+import { createProductOrder } from "@/lib/bot/orders";
+import { ensureHoldColumn } from "@/lib/bot/leads";
 
 async function requireChannelAdmin() {
   const session = await getSession();
@@ -56,6 +58,7 @@ export async function GET(req: NextRequest) {
     });
   }
   if (tab === "leads") {
+    await ensureHoldColumn();
     const leads = await prisma.botLead.findMany({
       include: { client: true, product: true, referrer: true },
       orderBy: { createdAt: "desc" },
@@ -72,6 +75,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ withdrawals });
   }
   if (tab === "users") {
+    await ensureHoldColumn();
     const [users, products, subscribers] = await Promise.all([
       prisma.botUser.findMany({
         orderBy: { createdAt: "desc" },
@@ -129,6 +133,7 @@ export async function GET(req: NextRequest) {
               ? `${l.product.title} · ${l.product.bank}`
               : l.product.title,
             premium: l.product.reward,
+            orderId: l.orderId ?? null,
           })),
         };
       }),
@@ -456,46 +461,39 @@ export async function POST(req: NextRequest) {
     const userId = String(body.userId || body.id || "");
     const client = await prisma.botUser.findUnique({
       where: { id: userId },
-      include: { referrer: true },
     });
     if (!client) return NextResponse.json({ error: "not found" }, { status: 404 });
     const all = body.productIds === "all" || body.all === true;
-    const productIds: string[] = Array.isArray(body.productIds)
+    let productIds: string[] = Array.isArray(body.productIds)
       ? body.productIds.map(String)
       : body.productId
         ? [String(body.productId)]
         : [];
-    const products = all
-      ? await prisma.botProduct.findMany({ where: { isActive: true } })
-      : await prisma.botProduct.findMany({ where: { id: { in: productIds } } });
-    if (products.length === 0) {
-      return NextResponse.json({ error: "нет продуктов" }, { status: 400 });
-    }
-    const created: string[] = [];
-    for (const product of products) {
-      const dup = await prisma.botLead.findFirst({
-        where: {
-          clientId: client.id,
-          productId: product.id,
-          status: { not: "rejected" },
-        },
+    if (all) {
+      const products = await prisma.botProduct.findMany({
+        where: { isActive: true },
+        select: { id: true },
       });
-      if (dup) continue;
-      const lead = await prisma.botLead.create({
-        data: {
-          clientId: client.id,
-          referrerId: client.referrerId,
-          productId: product.id,
-          fullName: client.username
-            ? `@${String(client.username).replace(/^@/, "")}`
-            : client.firstName || client.telegramId || "",
-          status: "processing",
-          adminComment: "оформлено вручную",
-        },
-      });
-      created.push(lead.id);
+      productIds = products.map((p) => p.id);
     }
-    return NextResponse.json({ ok: true, created: created.length });
+    const fullName = client.username
+      ? `@${String(client.username).replace(/^@/, "")}`
+      : client.firstName || client.telegramId || "";
+    const result = await createProductOrder({
+      clientId: client.id,
+      referrerId: client.referrerId,
+      fullName,
+      productIds,
+      adminComment: "оформлено вручную",
+    });
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+    return NextResponse.json({
+      ok: true,
+      orderId: result.orderId,
+      created: result.created.length,
+    });
   }
 
   return NextResponse.json({ error: "unknown action" }, { status: 400 });

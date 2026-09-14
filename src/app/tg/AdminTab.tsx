@@ -201,8 +201,8 @@ function AdminBody({
     return (
       <div className="tg-stack">
         <p className="tg-note-plate">
-          Общая база: заход и чья рефка. Оформление ставится вручную — одно
-          или все продукты. Премия уходит трафферу.
+          Общая база: заход и чья рефка. Чек оформляйте во вкладке «Люди»
+          (мультивыбор). Здесь — роли и бан. Премия уходит трафферу.
         </p>
         {users.map((u) => {
           const isAdm = u.role === "admin";
@@ -232,7 +232,10 @@ function AdminBody({
                 <div className="space-y-1">
                   {(u.issues || []).map((iss) => (
                     <p key={iss.id} className="text-xs">
-                      {iss.product} · {money(iss.premium)} · {iss.status}
+                      {iss.product} · {money(iss.premium)} · {statusLabel(iss.status)}
+                      {(iss as { orderId?: string | null }).orderId
+                        ? " · чек"
+                        : ""}
                     </p>
                   ))}
                 </div>
@@ -240,40 +243,24 @@ function AdminBody({
                 <p className="tg-muted text-xs">Продукты не оформлены</p>
               )}
               {!isAdm && left.length > 0 ? (
-                <div className="flex gap-2 flex-wrap">
-                  {left.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="tg-btn-secondary text-xs"
-                      disabled={disabled}
-                      onClick={() =>
-                        void onAction({
-                          action: "issue_products",
-                          userId: u.id,
-                          productId: p.id,
-                        })
-                      }
-                    >
-                      {p.title}
-                    </button>
-                  ))}
-                  {left.length > 1 ? (
-                    <button
-                      type="button"
-                      className="tg-btn-primary text-xs"
-                      disabled={disabled}
-                      onClick={() =>
-                        void onAction({
-                          action: "issue_products",
-                          userId: u.id,
-                          productIds: "all",
-                        })
-                      }
-                    >
-                      Оформить все
-                    </button>
-                  ) : null}
+                <div className="space-y-2">
+                  <p className="tg-muted text-xs">
+                    Оформление чеком — вкладка «Люди», либо все сразу:
+                  </p>
+                  <button
+                    type="button"
+                    className="tg-btn-primary text-xs w-full"
+                    disabled={disabled}
+                    onClick={() =>
+                      void onAction({
+                        action: "issue_products",
+                        userId: u.id,
+                        productIds: "all",
+                      })
+                    }
+                  >
+                    Оформить чек (все оставшиеся)
+                  </button>
                 </div>
               ) : null}
               {!isAdm ? (
@@ -499,6 +486,7 @@ function StatTile({
 type AdminLeadRow = {
   id: string;
   status: string;
+  orderId?: string | null;
   fullName: string;
   phone: string;
   subscriberAmount?: number | null;
@@ -517,6 +505,160 @@ type AdminWdRow = {
   user: { username: string | null; telegramId: string };
 };
 
+function groupLeadsByOrder(leads: AdminLeadRow[]) {
+  const groups: Array<{ key: string; orderId: string | null; lines: AdminLeadRow[] }> =
+    [];
+  const byOrder = new Map<string, AdminLeadRow[]>();
+  const singles: AdminLeadRow[] = [];
+  for (const l of leads) {
+    if (l.orderId) {
+      const list = byOrder.get(l.orderId) || [];
+      list.push(l);
+      byOrder.set(l.orderId, list);
+    } else {
+      singles.push(l);
+    }
+  }
+  for (const [orderId, lines] of Array.from(byOrder.entries())) {
+    groups.push({ key: orderId, orderId, lines });
+  }
+  for (const l of singles) {
+    groups.push({ key: l.id, orderId: null, lines: [l] });
+  }
+  return groups;
+}
+
+function AdminLeadLineControls({
+  l,
+  onAction,
+  disabled,
+}: {
+  l: AdminLeadRow;
+  onAction: (body: Record<string, unknown>) => Promise<void>;
+  disabled?: boolean;
+}) {
+  const st =
+    l.status === "new" || l.status === "duplicate"
+      ? "processing"
+      : l.status === "approved"
+        ? "awaiting_payout"
+        : l.status;
+  const split = resolveProductPayouts(
+    l.product.subscriberPrice ?? 0,
+    l.product.reward ?? 0
+  );
+  const rawSub = l.subscriberAmount;
+  const looksLikeLegacyCpa =
+    split.legacy &&
+    rawSub != null &&
+    Math.abs(Number(rawSub) - split.bankCpa) < 0.01;
+  const defAmt =
+    rawSub != null && rawSub > 0 && !looksLikeLegacyCpa
+      ? Number(rawSub)
+      : split.subscriber;
+  const prem = l.premiumAmount ?? split.traffer;
+  const ours = split.owner;
+  const productLabel = formatProductLabel(l.product.title, l.product.bank);
+
+  return (
+    <div className="space-y-2 rounded-xl border border-white/5 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">{productLabel} ×1</p>
+          {l.phone ? (
+            <p className="tg-muted text-xs mt-0.5">{l.phone}</p>
+          ) : null}
+        </div>
+        <span className={`tg-status tg-status-${st} shrink-0`}>
+          {statusLabel(st)}
+        </span>
+      </div>
+      <div className="tg-edit-block">
+        <label className="tg-label">Сумма подписчику, ₽</label>
+        <input
+          className="tg-input"
+          type="number"
+          defaultValue={defAmt}
+          disabled={disabled}
+          id={`amt-${l.id}`}
+        />
+        <p className="tg-muted text-xs">
+          Премия траффера: {money(prem)} · нам: {money(ours)} · CPA:{" "}
+          {money(split.bankCpa)}
+        </p>
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        <button
+          type="button"
+          className="tg-btn-secondary text-xs"
+          disabled={disabled || st === "processing"}
+          onClick={() =>
+            void onAction({
+              action: "lead_set_status",
+              id: l.id,
+              status: "processing",
+            })
+          }
+        >
+          В обработке
+        </button>
+        <button
+          type="button"
+          className="tg-btn-primary text-xs"
+          disabled={disabled || st === "awaiting_payout"}
+          onClick={() => {
+            const el = document.getElementById(
+              `amt-${l.id}`
+            ) as HTMLInputElement | null;
+            void onAction({
+              action: "lead_set_status",
+              id: l.id,
+              status: "awaiting_payout",
+              subscriberAmount: Number(el?.value || defAmt),
+            });
+          }}
+        >
+          Ждём выплату
+        </button>
+        <button
+          type="button"
+          className="tg-btn-primary text-xs"
+          disabled={disabled || st === "paid"}
+          onClick={() => {
+            const el = document.getElementById(
+              `amt-${l.id}`
+            ) as HTMLInputElement | null;
+            void onAction({
+              action: "lead_set_status",
+              id: l.id,
+              status: "paid",
+              subscriberAmount: Number(el?.value || defAmt),
+            });
+          }}
+        >
+          Выплачено
+        </button>
+        <button
+          type="button"
+          className="tg-btn-secondary text-xs"
+          disabled={disabled || st === "rejected"}
+          onClick={() => {
+            const comment = prompt("Почему не прошло") || "не прошло";
+            void onAction({
+              action: "lead_set_status",
+              id: l.id,
+              status: "rejected",
+              comment,
+            });
+          }}
+        >
+          Не прошло
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AdminLeadsPanel({
   leads,
   onAction,
@@ -528,25 +670,37 @@ function AdminLeadsPanel({
 }) {
   const [q, setQ] = useState("");
   const [bucket, setBucket] = useState<"open" | "closed">("open");
-  const filtered = useMemo(() => {
-    return leads.filter((l) => {
-      const closed = isClosedLead(l.status);
-      if (bucket === "open" && closed) return false;
-      if (bucket === "closed" && !closed) return false;
-      return matchesUsernameQuery(
+  const groups = useMemo(() => {
+    const matched = leads.filter((l) =>
+      matchesUsernameQuery(
         q,
         l.client.username,
         l.client.telegramId,
         l.fullName
-      );
+      )
+    );
+    // Keep full чек together: include sibling lines of the same orderId
+    const orderIds = new Set(
+      matched.map((l) => l.orderId).filter((x): x is string => Boolean(x))
+    );
+    const withSiblings = leads.filter(
+      (l) =>
+        matched.some((m) => m.id === l.id) ||
+        (l.orderId != null && orderIds.has(l.orderId))
+    );
+    const allGroups = groupLeadsByOrder(withSiblings);
+    return allGroups.filter((g) => {
+      const anyOpen = g.lines.some((l) => !isClosedLead(l.status));
+      if (bucket === "open") return anyOpen;
+      return !anyOpen;
     });
   }, [leads, q, bucket]);
 
   return (
     <div className="tg-stack">
       <p className="tg-note-plate">
-        Заказы по продуктам. Открытые — в работе; закрытые — выплачено или
-        отклонено. Поиск по @username.
+        Заказы по продуктам. Чек группирует позиции — у каждой свой статус и
+        сумма. Открытые — в работе; закрытые — выплачено или отклонено.
       </p>
       <input
         className="tg-input"
@@ -570,138 +724,41 @@ function AdminLeadsPanel({
           Закрытые
         </button>
       </div>
-      {filtered.length === 0 ? (
+      {groups.length === 0 ? (
         <div className="tg-empty">Нет заказов</div>
       ) : (
-        filtered.map((l) => {
-          const st =
-            l.status === "new" || l.status === "duplicate"
-              ? "processing"
-              : l.status === "approved"
-                ? "awaiting_payout"
-                : l.status;
-          const split = resolveProductPayouts(
-            l.product.subscriberPrice ?? 0,
-            l.product.reward ?? 0
-          );
-          const rawSub = l.subscriberAmount;
-          const looksLikeLegacyCpa =
-            split.legacy &&
-            rawSub != null &&
-            Math.abs(Number(rawSub) - split.bankCpa) < 0.01;
-          const defAmt =
-            rawSub != null && rawSub > 0 && !looksLikeLegacyCpa
-              ? Number(rawSub)
-              : split.subscriber;
-          const prem = l.premiumAmount ?? split.traffer;
-          const ours = split.owner;
-          const who = tgHandle(l.client.username, l.client.telegramId);
-          const refName = l.referrer
-            ? tgHandle(l.referrer.username, l.referrer.telegramId)
+        groups.map((g) => {
+          const head = g.lines[0];
+          const who = tgHandle(head.client.username, head.client.telegramId);
+          const refName = head.referrer
+            ? tgHandle(head.referrer.username, head.referrer.telegramId)
             : "Админы";
-          const productLabel = formatProductLabel(
-            l.product.title,
-            l.product.bank
-          );
           return (
-            <div key={l.id} className="tg-card space-y-3">
+            <div key={g.key} className="tg-card space-y-3">
               <div>
                 <p className="tg-card-title">{who}</p>
-                {l.fullName && !String(l.fullName).startsWith("@") ? (
-                  <p className="tg-muted text-xs mt-1">ФИО в заявке: {l.fullName}</p>
+                {head.fullName && !String(head.fullName).startsWith("@") ? (
+                  <p className="tg-muted text-xs mt-1">
+                    ФИО в заявке: {head.fullName}
+                  </p>
                 ) : null}
-                <p className="tg-muted text-sm mt-1">
-                  {productLabel}
-                  {l.phone ? ` · ${l.phone}` : ""}
-                </p>
                 <p className="tg-muted text-xs mt-1">рефка: {refName}</p>
-                <span className={`tg-status tg-status-${st} mt-2 inline-block`}>
-                  {statusLabel(st)}
-                </span>
+                {g.orderId ? (
+                  <p className="tg-muted text-xs mt-1">
+                    Чек · {g.lines.length} поз. · {g.orderId.slice(0, 14)}…
+                  </p>
+                ) : (
+                  <p className="tg-muted text-xs mt-1">Одна позиция</p>
+                )}
               </div>
-              <div className="tg-edit-block">
-                <label className="tg-label">Сумма подписчику, ₽</label>
-                <input
-                  className="tg-input"
-                  type="number"
-                  defaultValue={defAmt}
+              {g.lines.map((l) => (
+                <AdminLeadLineControls
+                  key={l.id}
+                  l={l}
+                  onAction={onAction}
                   disabled={disabled}
-                  id={`amt-${l.id}`}
                 />
-                <p className="tg-muted text-xs">
-                  Премия траффера: {money(prem)} · нам: {money(ours)} · CPA:{" "}
-                  {money(split.bankCpa)}
-                </p>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  type="button"
-                  className="tg-btn-secondary text-xs"
-                  disabled={disabled || st === "processing"}
-                  onClick={() =>
-                    void onAction({
-                      action: "lead_set_status",
-                      id: l.id,
-                      status: "processing",
-                    })
-                  }
-                >
-                  В обработке
-                </button>
-                <button
-                  type="button"
-                  className="tg-btn-primary text-xs"
-                  disabled={disabled || st === "awaiting_payout"}
-                  onClick={() => {
-                    const el = document.getElementById(
-                      `amt-${l.id}`
-                    ) as HTMLInputElement | null;
-                    void onAction({
-                      action: "lead_set_status",
-                      id: l.id,
-                      status: "awaiting_payout",
-                      subscriberAmount: Number(el?.value || defAmt),
-                    });
-                  }}
-                >
-                  Ждём выплату
-                </button>
-                <button
-                  type="button"
-                  className="tg-btn-primary text-xs"
-                  disabled={disabled || st === "paid"}
-                  onClick={() => {
-                    const el = document.getElementById(
-                      `amt-${l.id}`
-                    ) as HTMLInputElement | null;
-                    void onAction({
-                      action: "lead_set_status",
-                      id: l.id,
-                      status: "paid",
-                      subscriberAmount: Number(el?.value || defAmt),
-                    });
-                  }}
-                >
-                  Выплачено
-                </button>
-                <button
-                  type="button"
-                  className="tg-btn-secondary text-xs"
-                  disabled={disabled || st === "rejected"}
-                  onClick={() => {
-                    const comment =
-                      prompt("Почему не прошло") || "не прошло";
-                    void onAction({
-                      action: "lead_set_status",
-                      id: l.id,
-                      status: "rejected",
-                      comment,
-                    });
-                  }}
-                >
-                  Не прошло
-                </button>
-              </div>
+              ))}
             </div>
           );
         })

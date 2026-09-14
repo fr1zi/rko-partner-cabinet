@@ -23,7 +23,7 @@ export function ProductsTab({
   channelMember?: boolean;
   editable?: boolean;
   onSave?: (id: string, value: number) => Promise<void> | void;
-  onApply?: (id: string) => Promise<void> | void;
+  onApply?: (productId: string | string[]) => Promise<void> | void;
   applyingId?: string | null;
   disabled?: boolean;
   previewNote?: string;
@@ -33,6 +33,7 @@ export function ProductsTab({
   const [bank, setBank] = useState<string>(BANKS[0].label);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
 
   const bankOptions = useMemo(() => {
     const present = new Set(
@@ -65,6 +66,12 @@ export function ProductsTab({
     setDrafts(next);
   }, [products, isShop]);
 
+  useEffect(() => {
+    // Drop selections that are no longer visible / exist
+    const ids = new Set(products.map((p) => p.id));
+    setSelected((cur) => cur.filter((id) => ids.has(id)));
+  }, [products]);
+
   if (products.length === 0) {
     return (
       <EmptyState
@@ -72,6 +79,9 @@ export function ProductsTab({
       />
     );
   }
+
+  const canApply = isShop && onApply && !editable;
+  const applying = applyingId === "batch" || Boolean(applyingId);
 
   return (
     <div className="tg-stack">
@@ -86,7 +96,7 @@ export function ProductsTab({
       ) : (
         <p className="tg-note-plate">
           {isShop
-            ? "У каждого банка свои цены и выплаты."
+            ? "Отметьте продукты и оформите одним чеком."
             : "У каждого банка своя премия трафферу."}
         </p>
       )}
@@ -125,12 +135,31 @@ export function ProductsTab({
               ? "% премия"
               : "Премия";
           const amount = isShop ? p.subscriberPrice : p.reward;
+          const checked = selected.includes(p.id);
           return (
             <article key={p.id} className="tg-card tg-product">
               <div className="tg-product-top">
                 <div className="tg-product-copy">
                   <div className="tg-product-title-row">
-                    <h3 className="tg-card-title">{p.title}</h3>
+                    {canApply ? (
+                      <label className="flex items-center gap-2 min-w-0 flex-1">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={disabled || applying}
+                          onChange={() =>
+                            setSelected((cur) =>
+                              checked
+                                ? cur.filter((id) => id !== p.id)
+                                : [...cur, p.id]
+                            )
+                          }
+                        />
+                        <h3 className="tg-card-title">{p.title}</h3>
+                      </label>
+                    ) : (
+                      <h3 className="tg-card-title">{p.title}</h3>
+                    )}
                     {p.hot ? <span className="tg-hot-badge">HOT</span> : null}
                   </div>
                   {p.bank ? <p className="tg-product-bank">{p.bank}</p> : null}
@@ -181,14 +210,16 @@ export function ProductsTab({
                     <span className="tg-money-plate-label">{amountLabel}</span>
                     <span className="tg-money-plate-value">{money(amount)}</span>
                   </div>
-                  {isShop && onApply ? (
+                  {canApply ? (
                     <button
                       type="button"
-                      className="tg-btn-primary w-full text-sm"
-                      disabled={disabled || applyingId === p.id}
+                      className="tg-btn-secondary w-full text-sm"
+                      disabled={disabled || applying}
                       onClick={() => void onApply(p.id)}
                     >
-                      {applyingId === p.id ? "Отправляю…" : "Оставить заявку"}
+                      {applyingId === p.id
+                        ? "Отправляю…"
+                        : "Оставить заявку"}
                     </button>
                   ) : null}
                 </>
@@ -197,6 +228,25 @@ export function ProductsTab({
           );
         })
       )}
+
+      {canApply && selected.length > 0 ? (
+        <div className="tg-shop-sticky">
+          <button
+            type="button"
+            className="tg-btn-primary w-full"
+            disabled={disabled || applying}
+            onClick={async () => {
+              await onApply(selected);
+              setSelected([]);
+            }}
+          >
+            {applyingId === "batch"
+              ? "Отправляю…"
+              : `Оформить выбранные (${selected.length})`}
+          </button>
+        </div>
+      ) : null}
+
       {isShop && !editable ? (
         <a
           className="tg-btn-secondary w-full text-center"

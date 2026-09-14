@@ -149,6 +149,8 @@ model BotProduct {
 
 model BotLead {
   id                String   @id @default(cuid())
+  /// Groups several product lines into one «чек» application
+  orderId           String?
   clientId          String
   client            BotUser  @relation("LeadClient", fields: [clientId], references: [id])
   referrerId        String?
@@ -161,11 +163,14 @@ model BotLead {
   subscriberAmount  Float?
   premiumAmount     Float?
   adminComment      String?
+  /// Subscriber chose to wait until all lines in the чек are ready before credit
+  holdUntilOrderComplete Boolean @default(false)
   createdAt         DateTime @default(now())
   approvedAt        DateTime?
   txs               LedgerTx[]
 
   @@index([clientId, productId])
+  @@index([orderId])
 }
 
 model LedgerTx {
