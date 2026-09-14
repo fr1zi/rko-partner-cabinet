@@ -311,8 +311,28 @@ export async function POST(req: NextRequest) {
     }
 
     const receipt = formatOrderReceipt(result.lines, { html: true });
+    const orderCode = formatOrderNumber(result.orderId);
+    try {
+      await sendMessage(
+        user.telegramId,
+        [
+          "✅ <b>Заявка успешно создана</b>",
+          "",
+          `Номер: <b>${orderCode}</b>`,
+          "Статус: в обработке",
+          "",
+          "<b>Состав:</b>",
+          receipt,
+          "",
+          `Позиций: ${result.created.length}`,
+          "Следи за статусом в Mini App — напишем, когда позиция продвинется.",
+        ].join("\n")
+      );
+    } catch {
+      /* blocked / no chat */
+    }
     await sendToAdmins(
-      `📥 Новый чек (в обработке)\nКлиент: ${clientLabel}\nЧек: ${formatOrderNumber(result.orderId)}\n${receipt}\nПозиций: ${result.created.length}`
+      `📥 Новый чек (в обработке)\nКлиент: ${clientLabel}\nЧек: ${orderCode}\n${receipt}\nПозиций: ${result.created.length}`
     );
     if (user.referrerId) {
       const ref = await prisma.botUser.findUnique({

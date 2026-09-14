@@ -27,7 +27,11 @@ import {
   metaFromSettings,
 } from "@/lib/bot/leaderboard";
 import { buildTaxReportDocx } from "@/lib/bot/taxDocx";
-import { createProductOrder } from "@/lib/bot/orders";
+import {
+  createProductOrder,
+  formatOrderReceipt,
+  formatOrderNumber,
+} from "@/lib/bot/orders";
 import { ensureHoldColumn } from "@/lib/bot/leads";
 import { buildAndSendDailyDigest } from "@/lib/bot/dailyDigest";
 
@@ -670,6 +674,27 @@ export async function POST(req: NextRequest) {
     });
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+    const receipt = formatOrderReceipt(result.lines, { html: true });
+    const orderCode = formatOrderNumber(result.orderId);
+    try {
+      await sendMessage(
+        client.telegramId,
+        [
+          "✅ <b>Заявка успешно создана</b>",
+          "",
+          `Номер: <b>${orderCode}</b>`,
+          "Статус: в обработке",
+          "",
+          "<b>Состав:</b>",
+          receipt,
+          "",
+          `Позиций: ${result.created.length}`,
+          "Оформлено администратором. Следи за статусом в Mini App.",
+        ].join("\n")
+      );
+    } catch {
+      /* blocked */
     }
     return NextResponse.json({
       ok: true,
