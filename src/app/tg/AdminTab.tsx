@@ -112,7 +112,7 @@ function AdminBody({
             value={String(s.companyProfitMonthLabel ?? "0")}
           />
           <StatTile
-            label="Прибыль всего"
+            label="Общая прибыль"
             value={String(s.companyProfitLabel ?? "0")}
             wide
           />
@@ -1496,7 +1496,7 @@ function AdminLeadsPanel({
   }
 
   const statusChips: Array<[typeof statusFilter, string]> = [
-    ["processing", "В обработке"],
+    ["processing", "Заказы"],
     ["awaiting_payout", "Ждём выплату"],
     ["paid", "Выплачено"],
     ["rejected", "Отказ"],
@@ -1568,17 +1568,18 @@ function AdminLeadsPanel({
             : "Админы";
           const rejectedFocus = statusFilter === "rejected";
           const mainLines = rejectedFocus
-            ? g.lines
+            ? g.lines.filter((l) => normalizeLeadSt(l.status) === "rejected")
             : g.lines.filter((l) => normalizeLeadSt(l.status) !== "rejected");
           const removedForOrder = g.orderId
             ? leads.filter(
                 (l) => l.orderId === g.orderId && isRemovedFromCheck(l)
               )
             : g.lines.filter(isRemovedFromCheck);
-          const showRestoreBtn = Boolean(g.orderId);
+          const showRestoreBtn = Boolean(g.orderId) && !rejectedFocus;
           const panelOpen =
             Boolean(g.orderId) && restorePanelOrderId === g.orderId;
           const activeCount = mainLines.length;
+          if (activeCount === 0) return null;
           return (
             <div key={g.key} className="tg-card space-y-3">
               <div>
