@@ -182,18 +182,24 @@ export async function ensureBotProducts(): Promise<void> {
         where: { title: entry.title, bank: entry.bank },
       });
       if (existing) {
-        // Never clobber admin-edited prices/premiums
+        // Apply 10/45/45 catalog split when still on legacy equal prices
+        // (reward === subscriberPrice) or missing subscriber price.
+        // Custom admin overrides (unequal prices) are left alone.
+        const legacyEqual =
+          existing.reward === existing.subscriberPrice ||
+          existing.subscriberPrice <= 0;
         await prisma.botProduct.update({
           where: { id: existing.id },
           data: {
             description: existing.description || entry.description,
             rewardType: "fixed",
             isActive: true,
-            ...(existing.subscriberPrice <= 0 && existing.reward > 0
-              ? { subscriberPrice: existing.reward }
-              : existing.subscriberPrice <= 0
-                ? { subscriberPrice: entry.subscriberPrice }
-                : {}),
+            ...(legacyEqual
+              ? {
+                  reward: entry.reward,
+                  subscriberPrice: entry.subscriberPrice,
+                }
+              : {}),
           },
         });
       } else {

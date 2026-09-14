@@ -1,5 +1,11 @@
 import { BANKS } from "./banks";
 
+/** Bank CPA split: traffer 10% · subscriber 45% · owner 45%. */
+export const TRAFFER_SHARE = 0.1;
+export const SUBSCRIBER_SHARE = 0.45;
+export const OWNER_SHARE = 0.45;
+
+/** `premium` = bank CPA (total payout from bank for one approved lead). */
 export const DEFAULT_PRODUCT_RATES = [
   {
     productKey: "rko",
@@ -54,6 +60,14 @@ export const PRODUCT_TITLE_BY_KEY: Record<string, string> = {
   deposit: "Депозит для бизнеса",
 };
 
+export function trafferReward(cpa: number) {
+  return Math.round(cpa * TRAFFER_SHARE);
+}
+
+export function subscriberPayout(cpa: number) {
+  return Math.round(cpa * SUBSCRIBER_SHARE);
+}
+
 /** One BotProduct row per bank × product type. */
 export function catalogEntries() {
   const out: Array<{
@@ -72,8 +86,8 @@ export function catalogEntries() {
         title,
         bank: bank.label,
         description: `${r.productName} · ${bank.label}${age}`,
-        reward: r.premium,
-        subscriberPrice: r.premium,
+        reward: trafferReward(r.premium),
+        subscriberPrice: subscriberPayout(r.premium),
         sortKey: `${r.sortOrder}-${bank.key}`,
       });
     }
