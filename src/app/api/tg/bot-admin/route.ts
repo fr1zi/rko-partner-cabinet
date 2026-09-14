@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  await ensureHoldColumn();
   await ensureBotProducts();
   const tab = req.nextUrl.searchParams.get("tab") || "stats";
 

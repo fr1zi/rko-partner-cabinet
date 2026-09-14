@@ -34,6 +34,9 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { user, session } = ctx;
+  try {
+  // Columns must exist before ANY BotLead Prisma SELECT
+  await ensureHoldColumn();
   await ensureBotProducts();
 
   const clicks = await prisma.referralClick.count({
@@ -76,7 +79,6 @@ export async function GET() {
     take: 20,
   });
 
-  await ensureHoldColumn();
   const myLeads = await prisma.botLead.findMany({
     where: { clientId: user.id },
     include: { product: true },
@@ -200,6 +202,13 @@ export async function GET() {
     leaderboard,
     leaderboardMeta,
   });
+  } catch (err) {
+    console.error("cabinet GET failed", err);
+    return NextResponse.json(
+      { error: "cabinet_failed", detail: String(err instanceof Error ? err.message : err) },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: NextRequest) {

@@ -25,7 +25,25 @@ export function supportDmUrl() {
   return `https://t.me/${raw}`;
 }
 
-export async function ensureHoldColumn() {
+/**
+ * Ensure BotLead columns added in schema but not yet migrated on prod.
+ * MUST run before any prisma.botLead query — Prisma SELECTs these fields.
+ */
+export async function ensureBotLeadColumns() {
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "BotLead" ADD COLUMN IF NOT EXISTS "orderId" TEXT`
+    );
+  } catch {
+    /* ignore */
+  }
+  try {
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "BotLead_orderId_idx" ON "BotLead"("orderId")`
+    );
+  } catch {
+    /* ignore */
+  }
   try {
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "BotLead" ADD COLUMN IF NOT EXISTS "holdUntilOrderComplete" BOOLEAN NOT NULL DEFAULT false`
@@ -33,6 +51,11 @@ export async function ensureHoldColumn() {
   } catch {
     /* ignore */
   }
+}
+
+/** @deprecated alias — use ensureBotLeadColumns */
+export async function ensureHoldColumn() {
+  return ensureBotLeadColumns();
 }
 
 export async function creditOnce(opts: {
