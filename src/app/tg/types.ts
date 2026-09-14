@@ -113,6 +113,7 @@ export type AdminSubTab =
   | "stats"
   | "products"
   | "premiums"
+  | "offers"
   | "leads"
   | "withdrawals"
   | "users";

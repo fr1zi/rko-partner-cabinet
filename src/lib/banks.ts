@@ -18,3 +18,12 @@ export function isKnownBank(label: string | null | undefined): boolean {
   if (!label) return false;
   return BANKS.some((b) => b.label === label);
 }
+
+/** Non-partner offers live under custom categories (default «Другое»). */
+export const OFFER_DEFAULT_CATEGORY = "Другое";
+
+export function isOfferCategory(label: string | null | undefined): boolean {
+  const b = String(label || "").trim();
+  if (!b) return true;
+  return !isKnownBank(b);
+}

@@ -1,13 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BANKS } from "@/lib/banks";
+import {
+  BANKS,
+  OFFER_DEFAULT_CATEGORY,
+  isKnownBank,
+  isOfferCategory,
+} from "@/lib/banks";
 import {
   estimateBankCpa,
   isAdminRefAttribution,
   ownerMarginFromPayouts,
   ownerPayout,
   resolveProductPayouts,
+  subscriberPayout,
+  trafferReward,
 } from "@/lib/productDefaults";
 import type { AdminSubTab } from "./types";
 import { LeaderboardList } from "./Leaderboard";
@@ -26,6 +33,7 @@ const SUBS: Array<[AdminSubTab, string]> = [
   ["stats", "Итоги"],
   ["products", "Цены"],
   ["premiums", "Премии"],
+  ["offers", "Офферы"],
   ["leads", "Заказы"],
   ["withdrawals", "Выводы"],
   ["users", "Юзеры"],
@@ -161,6 +169,16 @@ function AdminBody({
     return (
       <AdminProductsEditor
         mode="premiums"
+        products={(data.products || []) as AdminProductRow[]}
+        onAction={onAction}
+        disabled={disabled}
+      />
+    );
+  }
+
+  if (tab === "offers") {
+    return (
+      <AdminOffersPanel
         products={(data.products || []) as AdminProductRow[]}
         onAction={onAction}
         disabled={disabled}
@@ -1982,17 +2000,17 @@ function AdminProductsEditor({
   const [bank, setBank] = useState<string>(BANKS[0].label);
   const isPrices = mode === "prices";
 
+  const partnerProducts = useMemo(
+    () => products.filter((p) => isKnownBank(p.bank || "")),
+    [products]
+  );
+
   const bankOptions = useMemo(() => {
     const present = new Set(
-      products.map((p) => p.bank || "").filter(Boolean)
+      partnerProducts.map((p) => p.bank || "").filter(Boolean)
     );
-    const known = BANKS.filter((b) => present.has(b.label));
-    const extras = Array.from(present)
-      .filter((label) => !BANKS.some((b) => b.label === label))
-      .sort()
-      .map((label) => ({ key: label, label, short: label }));
-    return [...known, ...extras];
-  }, [products]);
+    return BANKS.filter((b) => present.has(b.label));
+  }, [partnerProducts]);
 
   useEffect(() => {
     if (bankOptions.length === 0) return;
@@ -2002,8 +2020,8 @@ function AdminProductsEditor({
   }, [bankOptions, bank]);
 
   const filtered = useMemo(() => {
-    return products.filter((p) => (p.bank || "") === bank);
-  }, [products, bank]);
+    return partnerProducts.filter((p) => (p.bank || "") === bank);
+  }, [partnerProducts, bank]);
 
   return (
     <div className="tg-stack">
@@ -2187,3 +2205,303 @@ function AdminProductsEditor({
     </div>
   );
 }
+
+function AdminOffersPanel({
+  products,
+  onAction,
+  disabled,
+}: {
+  products: AdminProductRow[];
+  onAction: (body: Record<string, unknown>) => Promise<void>;
+  disabled?: boolean;
+}) {
+  const offers = useMemo(
+    () => products.filter((p) => isOfferCategory(p.bank || "")),
+    [products]
+  );
+
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState(OFFER_DEFAULT_CATEGORY);
+  const [description, setDescription] = useState("");
+  const [bankCpa, setBankCpa] = useState("");
+  const [subscriberPrice, setSubscriberPrice] = useState("");
+  const [reward, setReward] = useState("");
+  const [isHot, setIsHot] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function createOffer() {
+    const name = title.trim();
+    if (!name) {
+      alert("Нужно название оффера");
+      return;
+    }
+    const cat = category.trim() || OFFER_DEFAULT_CATEGORY;
+    if (isKnownBank(cat)) {
+      alert(
+        "Категория банка-партнёра — для офферов укажи «Другое» или своё имя"
+      );
+      return;
+    }
+    const cpa = Math.max(0, Math.round(Number(bankCpa) || 0));
+    let sub = Number(subscriberPrice);
+    let prem = Number(reward);
+    if (
+      cpa > 0 &&
+      (!(Number.isFinite(sub) && sub > 0) || !(Number.isFinite(prem) && prem > 0))
+    ) {
+      sub = subscriberPayout(cpa);
+      prem = trafferReward(cpa);
+    }
+    if (!Number.isFinite(sub)) sub = 0;
+    if (!Number.isFinite(prem)) prem = 0;
+    setBusy(true);
+    try {
+      await onAction({
+        action: "product_create",
+        title: name,
+        bank: cat,
+        description: description.trim(),
+        subscriberPrice: sub,
+        reward: prem,
+        isActive: true,
+        isHot,
+        hotText: "HOT",
+        hotDays: isHot ? 7 : 0,
+      });
+      setTitle("");
+      setDescription("");
+      setBankCpa("");
+      setSubscriberPrice("");
+      setReward("");
+      setIsHot(false);
+      setCategory(OFFER_DEFAULT_CATEGORY);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="tg-stack">
+      <p className="tg-note-plate">
+        Офферы не от банков-партнёров. Категория по умолчанию «Другое» — так
+        попадут в каталог. Можно пометить HOT и удалить.
+      </p>
+
+      <div className="tg-card space-y-3">
+        <p className="tg-card-title">Новый оффер</p>
+        <div className="tg-edit-block">
+          <label className="tg-label">Название</label>
+          <input
+            className="tg-input"
+            value={title}
+            disabled={disabled || busy}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Например: Кредит наличными"
+          />
+        </div>
+        <div className="tg-edit-block">
+          <label className="tg-label">Категория</label>
+          <input
+            className="tg-input"
+            value={category}
+            disabled={disabled || busy}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder={OFFER_DEFAULT_CATEGORY}
+          />
+          <p className="tg-muted text-xs mt-1">
+            «Другое» или своя категория (не банк-партнёр)
+          </p>
+        </div>
+        <div className="tg-edit-block">
+          <label className="tg-label">Описание</label>
+          <input
+            className="tg-input"
+            value={description}
+            disabled={disabled || busy}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Кратко для каталога"
+          />
+        </div>
+        <div className="tg-edit-block">
+          <label className="tg-label">CPA / оборот, ₽</label>
+          <input
+            className="tg-input"
+            type="number"
+            value={bankCpa}
+            disabled={disabled || busy}
+            onChange={(e) => setBankCpa(e.target.value)}
+            placeholder="опционально — посчитает 10/45/45"
+          />
+        </div>
+        <div className="tg-stat-grid">
+          <div className="tg-edit-block">
+            <label className="tg-label">Подписчику, ₽</label>
+            <input
+              className="tg-input"
+              type="number"
+              value={subscriberPrice}
+              disabled={disabled || busy}
+              onChange={(e) => setSubscriberPrice(e.target.value)}
+            />
+          </div>
+          <div className="tg-edit-block">
+            <label className="tg-label">Трафферу, ₽</label>
+            <input
+              className="tg-input"
+              type="number"
+              value={reward}
+              disabled={disabled || busy}
+              onChange={(e) => setReward(e.target.value)}
+            />
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm px-1">
+          <input
+            type="checkbox"
+            checked={isHot}
+            disabled={disabled || busy}
+            onChange={(e) => setIsHot(e.target.checked)}
+          />
+          <span>HOT на 7 дней</span>
+        </label>
+        <button
+          type="button"
+          className="tg-btn-primary w-full text-sm"
+          disabled={disabled || busy}
+          onClick={() => void createOffer()}
+        >
+          Разместить оффер
+        </button>
+      </div>
+
+      <h2 className="tg-section-label">Офферы · {offers.length}</h2>
+      {offers.length === 0 ? (
+        <div className="tg-empty">Пока нет офферов</div>
+      ) : (
+        offers.map((p) => {
+          const sub = p.subscriberPrice ?? 0;
+          const prem = p.reward ?? 0;
+          const cpa =
+            p.bankCpa && p.bankCpa > 0
+              ? p.bankCpa
+              : estimateBankCpa(sub, prem) || Math.round(sub + prem);
+          const ours =
+            p.ownerMargin && p.ownerMargin > 0
+              ? p.ownerMargin
+              : ownerMarginFromPayouts(sub, prem) || ownerPayout(cpa);
+          return (
+            <div key={p.id} className="tg-card space-y-3">
+              <div className="tg-product-title-row">
+                <div className="min-w-0 flex-1">
+                  <p className="tg-card-title">{p.title}</p>
+                  <p className="tg-product-bank">
+                    {p.bank || OFFER_DEFAULT_CATEGORY}
+                  </p>
+                </div>
+                {p.isHot ? <span className="tg-hot-badge">HOT</span> : null}
+                <span
+                  className={
+                    p.isActive
+                      ? "tg-status tg-status-approved"
+                      : "tg-status tg-status-none"
+                  }
+                >
+                  {p.isActive ? "Вкл" : "Выкл"}
+                </span>
+              </div>
+              <div className="tg-stat-grid">
+                <div className="tg-stat-tile">
+                  <p className="tg-stat-label">Подписчик</p>
+                  <p className="tg-stat-value text-base">{money(sub)}</p>
+                </div>
+                <div className="tg-stat-tile">
+                  <p className="tg-stat-label">Траффер</p>
+                  <p className="tg-stat-value text-base">{money(prem)}</p>
+                </div>
+                <div className="tg-stat-tile tg-stat-wide">
+                  <p className="tg-stat-label">Нам</p>
+                  <p className="tg-stat-value text-base text-money">
+                    {money(ours)}
+                  </p>
+                </div>
+              </div>
+              <div className="tg-edit-block">
+                <label className="tg-label">CPA, ₽</label>
+                <input
+                  className="tg-input"
+                  type="number"
+                  defaultValue={cpa}
+                  disabled={disabled}
+                  id={`offer-cpa-${p.id}`}
+                />
+              </div>
+              <button
+                type="button"
+                className="tg-btn-primary w-full text-sm"
+                disabled={disabled}
+                onClick={() => {
+                  const el = document.getElementById(
+                    `offer-cpa-${p.id}`
+                  ) as HTMLInputElement | null;
+                  void onAction({
+                    action: "product_set_cpa",
+                    id: p.id,
+                    bankCpa: Number(el?.value || cpa),
+                  });
+                }}
+              >
+                Применить 10/45/45 от CPA
+              </button>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs flex-1"
+                  disabled={disabled}
+                  onClick={() =>
+                    void onAction({ action: "product_toggle", id: p.id })
+                  }
+                >
+                  {p.isActive ? "Выключить" : "Включить"}
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs flex-1"
+                  disabled={disabled}
+                  onClick={() =>
+                    void onAction({
+                      action: "product_hot",
+                      id: p.id,
+                      isHot: !p.isHot,
+                      hotText: "HOT",
+                      days: 7,
+                    })
+                  }
+                >
+                  {p.isHot ? "Снять HOT" : "HOT 7д"}
+                </button>
+                <button
+                  type="button"
+                  className="tg-btn-secondary text-xs flex-1"
+                  disabled={disabled}
+                  onClick={() => {
+                    if (
+                      !confirm(
+                        `Удалить оффер «${p.title}»? Если есть заявки — только выключится.`
+                      )
+                    ) {
+                      return;
+                    }
+                    void onAction({ action: "product_delete", id: p.id });
+                  }}
+                >
+                  Удалить
+                </button>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+

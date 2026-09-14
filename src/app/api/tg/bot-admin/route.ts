@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
   await ensureBotProducts();
   const tab = req.nextUrl.searchParams.get("tab") || "stats";
 
-  if (tab === "products" || tab === "premiums") {
+  if (tab === "products" || tab === "premiums" || tab === "offers") {
     const products = await prisma.botProduct.findMany({
       orderBy: { createdAt: "desc" },
     });
@@ -280,16 +280,24 @@ export async function POST(req: NextRequest) {
       body.subscriberPrice !== undefined && body.subscriberPrice !== ""
         ? Number(body.subscriberPrice) || 0
         : reward;
+    const isHot = body.isHot === true;
+    const hotDays = Math.max(0, Number(body.hotDays) || 0);
     const p = await prisma.botProduct.create({
       data: {
         title: String(body.title || "").trim(),
-        bank: String(body.bank || ""),
+        bank: String(body.bank || "").trim() || "Другое",
         description: String(body.description || ""),
         reward,
         subscriberPrice,
         rewardType: body.rewardType === "percent" ? "percent" : "fixed",
         url: String(body.url || ""),
         isActive: body.isActive !== false,
+        isHot,
+        hotText: isHot ? String(body.hotText || "HOT") : null,
+        hotUntil:
+          isHot && hotDays > 0
+            ? new Date(Date.now() + hotDays * 24 * 60 * 60 * 1000)
+            : null,
       },
     });
     return NextResponse.json({ ok: true, product: p });
@@ -322,6 +330,27 @@ export async function POST(req: NextRequest) {
       data: { isActive: !pr.isActive },
     });
     return NextResponse.json({ ok: true, product: updated });
+  }
+
+  if (action === "product_delete") {
+    const id = String(body.id || "");
+    const pr = await prisma.botProduct.findUnique({ where: { id } });
+    if (!pr) return NextResponse.json({ error: "not found" }, { status: 404 });
+    const leadCount = await prisma.botLead.count({ where: { productId: id } });
+    if (leadCount > 0) {
+      const updated = await prisma.botProduct.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      return NextResponse.json({
+        ok: true,
+        softDeleted: true,
+        product: updated,
+        message: "Есть заявки — оффер выключен, не удалён",
+      });
+    }
+    await prisma.botProduct.delete({ where: { id } });
+    return NextResponse.json({ ok: true, deleted: true });
   }
 
   if (action === "product_hot") {
