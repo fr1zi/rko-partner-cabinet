@@ -5,6 +5,7 @@ import type { CabinetData, TgRole } from "./types";
 import { LeaderboardList } from "./Leaderboard";
 import { formatOrderNumber } from "@/lib/orderNumber";
 import { formatDate, money, statusLabel } from "./utils";
+import { DonutChart, ProfitBars, FunnelBars } from "./SummaryCharts";
 
 type AppRow = NonNullable<CabinetData["applications"]>[number];
 
@@ -51,6 +52,10 @@ export type AdminHomeStats = {
   creditedLabel?: string;
   companyProfit?: number;
   companyProfitLabel?: string;
+  companyProfitToday?: number;
+  companyProfitTodayLabel?: string;
+  companyProfitMonth?: number;
+  companyProfitMonthLabel?: string;
   paidLeads?: number;
 };
 
@@ -125,6 +130,64 @@ export function HomeTab({
               </div>
             ))}
           </div>
+        </section>
+        <section className="tg-stack">
+          <h2 className="tg-section-label">Диаграммы</h2>
+          <DonutChart
+            title="Аудитория"
+            centerLabel={String(
+              Number(s.channelSubscribers ?? 0) ||
+                Number(s.trafters ?? 0) + Number(s.clients ?? 0)
+            )}
+            slices={[
+              {
+                label: "Подписчики",
+                value: Number(s.channelSubscribers ?? 0),
+                color: "#22d3ee",
+              },
+              {
+                label: "Трафферы",
+                value: Number(s.trafters ?? 0),
+                color: "#a78bfa",
+              },
+              {
+                label: "Клиенты",
+                value: Number(s.clients ?? 0),
+                color: "#34d399",
+              },
+            ]}
+          />
+          <ProfitBars
+            title="Прибыль компании"
+            bars={[
+              {
+                label: "За день",
+                value: Number(s.companyProfitToday ?? 0),
+                valueLabel: String(
+                  s.companyProfitTodayLabel ??
+                    money(Number(s.companyProfitToday ?? 0))
+                ),
+                color: "#22d3ee",
+              },
+              {
+                label: "За месяц",
+                value: Number(s.companyProfitMonth ?? 0),
+                valueLabel: String(
+                  s.companyProfitMonthLabel ??
+                    money(Number(s.companyProfitMonth ?? 0))
+                ),
+                color: "#a78bfa",
+              },
+              {
+                label: "Всего",
+                value: Number(s.companyProfit ?? 0),
+                valueLabel: String(
+                  s.companyProfitLabel ?? money(Number(s.companyProfit ?? 0))
+                ),
+                color: "#34d399",
+              },
+            ]}
+          />
         </section>
         <section>
           <h2 className="tg-section-label">Лидерборд трафферов</h2>
@@ -295,6 +358,28 @@ export function HomeTab({
         <p className="tg-balance-value">{money(data.botUser.balance)}</p>
         <p className="tg-balance-hint">Премии · ИП / ООО</p>
       </section>
+
+      <FunnelBars
+        title="Воронка"
+        steps={[
+          { label: "Клики", value: Number(data.stats.clicks || 0), color: "#67e8f9" },
+          {
+            label: "Регистрации",
+            value: Number(data.stats.registrations || 0),
+            color: "#a78bfa",
+          },
+          {
+            label: "Заявки",
+            value: Number(data.stats.leadsTotal || 0),
+            color: "#fbbf24",
+          },
+          {
+            label: "Одобрено",
+            value: Number(data.stats.approved || 0),
+            color: "#34d399",
+          },
+        ]}
+      />
 
       <section className="tg-card">
         <div className="flex items-start justify-between gap-3 mb-3">

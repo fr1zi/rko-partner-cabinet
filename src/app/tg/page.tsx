@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Script from "next/script";
 import { AdminTab } from "./AdminTab";
 import { DEMO_ADMIN, DEMO_CABINET } from "./demo";
-import { HomeTab } from "./HomeTab";
+import { HomeTab, type AdminHomeStats } from "./HomeTab";
 import { PeopleTab, type AdminPerson, type AdminProductOpt } from "./PeopleTab";
 import { ProductsTab } from "./ProductsTab";
 import { PreviewBanner, TgHeader } from "./TgHeader";
@@ -413,21 +413,7 @@ export default function TelegramMiniAppPage() {
                         ? auth.channelMember
                         : true
                     }
-                    adminStats={
-                      (adminData?.stats as
-                        | {
-                            trafters?: number;
-                            clients?: number;
-                            leads?: number;
-                            channelSubscribers?: number;
-                            channelMembersTotal?: number;
-                            credited?: number;
-                            creditedLabel?: string;
-                            companyProfit?: number;
-                            companyProfitLabel?: string;
-                            paidLeads?: number;
-                          }
-                        | undefined) || null
+                    adminStats={(adminData?.stats as AdminHomeStats | undefined) || null
                     }
                   />
                 ) : null}

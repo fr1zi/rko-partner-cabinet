@@ -1066,3 +1066,119 @@ body {
   backdrop-filter: blur(8px);
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
 }
+
+/* Summary charts on home */
+.tg-chart-card {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(160deg, rgba(34, 211, 238, 0.08), rgba(15, 23, 42, 0.6));
+  padding: 14px 14px 12px;
+}
+.tg-chart-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 10px;
+}
+.tg-chart-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tg-donut {
+  width: 112px;
+  height: 112px;
+  flex-shrink: 0;
+}
+.tg-donut-center {
+  fill: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: inherit;
+}
+.tg-donut-sub {
+  fill: rgba(255, 255, 255, 0.45);
+  font-size: 9px;
+  font-family: inherit;
+}
+.tg-chart-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tg-chart-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+.tg-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.tg-legend-label {
+  flex: 1;
+  color: rgba(255, 255, 255, 0.75);
+}
+.tg-legend-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.tg-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tg-bar-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+  margin-bottom: 4px;
+}
+.tg-bar-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.tg-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  min-width: 4px;
+  transition: width 0.4s ease;
+}
+.tg-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+.tg-funnel-step {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.tg-funnel-block {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  color: #0b1220;
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-width: 40%;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.tg-funnel-block strong {
+  font-variant-numeric: tabular-nums;
+}
