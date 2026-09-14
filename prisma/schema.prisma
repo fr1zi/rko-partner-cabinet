@@ -186,13 +186,14 @@ model LedgerTx {
 }
 
 model Withdrawal {
-  id        String   @id @default(cuid())
-  userId    String
-  user      BotUser  @relation(fields: [userId], references: [id])
-  amount    Float
-  details   String
-  status    String   @default("new")
-  createdAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  userId       String
+  user         BotUser  @relation(fields: [userId], references: [id])
+  amount       Float
+  details      String
+  status       String   @default("new")
+  adminComment String?
+  createdAt    DateTime @default(now())
 }
 
 model ReferralClick {

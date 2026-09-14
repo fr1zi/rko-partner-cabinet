@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { CabinetData } from "./types";
-import { formatDate, money, statusLabel } from "./utils";
+import { formatDate, matchesUsernameQuery, money, statusLabel } from "./utils";
 
 export type AdminPerson = {
   id: string;
@@ -170,6 +170,65 @@ function AdminPeopleTable({
   const [expandedView, setExpandedView] = useState<string | null>(null);
   const [expandedCompose, setExpandedCompose] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [q, setQ] = useState("");
+  const [roleFilter, setRoleFilter] = useState<
+    "all" | "traffer" | "subscriber" | "admin"
+  >("all");
+  const [issuesFilter, setIssuesFilter] = useState<"all" | "has" | "none">(
+    "all"
+  );
+  const [bankFilter, setBankFilter] = useState<string>("all");
+
+  const banks = useMemo(() => {
+    const set = new Set<string>();
+    for (const u of people) {
+      for (const iss of u.issues || []) {
+        const parts = String(iss.product || "").split(" · ");
+        if (parts.length > 1) {
+          const b = parts[parts.length - 1].trim();
+          if (b) set.add(b);
+        }
+      }
+      for (const p of products) {
+        const b = (p.bank || "").trim();
+        if (b) set.add(b);
+      }
+    }
+    return Array.from(set).sort();
+  }, [people, products]);
+
+  const filtered = useMemo(() => {
+    return people.filter((u) => {
+      if (!matchesUsernameQuery(q, u.username, u.telegramId, u.firstName)) {
+        return false;
+      }
+      const role = (u.role || "").toLowerCase();
+      if (roleFilter === "traffer" && role !== "traffer") return false;
+      if (roleFilter === "admin" && role !== "admin") return false;
+      if (
+        roleFilter === "subscriber" &&
+        role !== "subscriber" &&
+        role !== "client"
+      ) {
+        return false;
+      }
+      const issues = u.issues || [];
+      if (issuesFilter === "has" && issues.length === 0) return false;
+      if (issuesFilter === "none" && issues.length > 0) return false;
+      if (bankFilter !== "all") {
+        const hasBank = issues.some((iss) => {
+          const label = String(iss.product || "");
+          return (
+            label.includes(` · ${bankFilter}`) ||
+            label.endsWith(bankFilter) ||
+            label.includes(bankFilter)
+          );
+        });
+        if (!hasBank) return false;
+      }
+      return true;
+    });
+  }, [people, q, roleFilter, issuesFilter, bankFilter]);
 
   if (loading && people.length === 0) {
     return <div className="tg-empty">Загрузка таблицы…</div>;
@@ -184,12 +243,90 @@ function AdminPeopleTable({
 
   return (
     <div className="tg-stack">
-      <h2 className="tg-section-label">Люди канала · {people.length}</h2>
+      <h2 className="tg-section-label">
+        Люди канала · {filtered.length}
+        {filtered.length !== people.length ? ` / ${people.length}` : ""}
+      </h2>
       <p className="tg-note-plate">
         Общая база канала: заход, чья рефка, оформление чеком. Несколько
         продуктов — один чек. Премия уходит трафферу.
       </p>
-      {people.map((u) => {
+      <input
+        className="tg-input"
+        placeholder="Поиск @username / id"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+      <div className="tg-admin-chips">
+        {(
+          [
+            ["all", "Все роли"],
+            ["traffer", "Трафферы"],
+            ["subscriber", "Подписчики"],
+            ["admin", "Админы"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={
+              roleFilter === key ? "tg-chip tg-chip-active" : "tg-chip"
+            }
+            onClick={() => setRoleFilter(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="tg-admin-chips">
+        {(
+          [
+            ["all", "Все заявки"],
+            ["has", "Есть заявки"],
+            ["none", "Нет заявок"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={
+              issuesFilter === key ? "tg-chip tg-chip-active" : "tg-chip"
+            }
+            onClick={() => setIssuesFilter(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {banks.length > 0 ? (
+        <div className="tg-admin-chips">
+          <button
+            type="button"
+            className={
+              bankFilter === "all" ? "tg-chip tg-chip-active" : "tg-chip"
+            }
+            onClick={() => setBankFilter("all")}
+          >
+            Все банки
+          </button>
+          {banks.map((b) => (
+            <button
+              key={b}
+              type="button"
+              className={
+                bankFilter === b ? "tg-chip tg-chip-active" : "tg-chip"
+              }
+              onClick={() => setBankFilter(b)}
+            >
+              {b}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {filtered.length === 0 ? (
+        <div className="tg-empty">Никого по фильтру</div>
+      ) : null}
+      {filtered.map((u) => {
         const handle = u.username
           ? `@${String(u.username).replace(/^@/, "")}`
           : `id ${u.telegramId}`;

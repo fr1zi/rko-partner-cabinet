@@ -34,6 +34,45 @@ export function ProductsTab({
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [draftRestored, setDraftRestored] = useState(0);
+  const [draftReady, setDraftReady] = useState(false);
+
+  // Restore check draft after Mini App close (before persisting)
+  useEffect(() => {
+    if (!isShop || !onApply) {
+      setDraftReady(true);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem("rko_check_draft_v1");
+      if (raw) {
+        const ids = JSON.parse(raw) as unknown;
+        if (Array.isArray(ids)) {
+          const clean = ids.map(String).filter(Boolean);
+          if (clean.length > 0) {
+            setSelected(clean);
+            setDraftRestored(clean.length);
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    setDraftReady(true);
+  }, [isShop, onApply]);
+
+  useEffect(() => {
+    if (!draftReady || !isShop || !onApply) return;
+    try {
+      if (selected.length === 0) {
+        localStorage.removeItem("rko_check_draft_v1");
+      } else {
+        localStorage.setItem("rko_check_draft_v1", JSON.stringify(selected));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [selected, isShop, onApply, draftReady]);
 
   const bankOptions = useMemo(() => {
     const present = new Set(
@@ -67,9 +106,13 @@ export function ProductsTab({
   }, [products, isShop]);
 
   useEffect(() => {
-    // Drop selections that are no longer visible / exist
+    // Drop selections that are no longer visible / exist (skip while catalog empty)
+    if (products.length === 0) return;
     const ids = new Set(products.map((p) => p.id));
-    setSelected((cur) => cur.filter((id) => ids.has(id)));
+    setSelected((cur) => {
+      const next = cur.filter((id) => ids.has(id));
+      return next.length === cur.length ? cur : next;
+    });
   }, [products]);
 
   if (products.length === 0) {
@@ -229,6 +272,10 @@ export function ProductsTab({
         })
       )}
 
+      {draftRestored > 0 && canApply ? (
+        <p className="tg-note-plate">Черновик восстановлен ({draftRestored})</p>
+      ) : null}
+
       {canApply && selected.length > 0 ? (
         <div className="tg-shop-sticky">
           <button
@@ -239,6 +286,12 @@ export function ProductsTab({
               const ids = [...selected];
               await onApply(ids);
               setSelected([]);
+              setDraftRestored(0);
+              try {
+                localStorage.removeItem("rko_check_draft_v1");
+              } catch {
+                /* ignore */
+              }
             }}
           >
             {applyingId === "batch"

@@ -14,7 +14,6 @@ import { LeaderboardList } from "./Leaderboard";
 import {
   formatDate,
   formatProductLabel,
-  isClosedLead,
   isClosedWithdrawal,
   matchesUsernameQuery,
   money,
@@ -109,6 +108,14 @@ function AdminBody({
             wide
           />
         </div>
+        <button
+          type="button"
+          className="tg-btn-secondary w-full text-sm"
+          disabled={disabled}
+          onClick={() => void onAction({ action: "send_daily_digest" })}
+        >
+          Дайджест сейчас
+        </button>
         <TaxReportPanel
           initial={(data.taxReport || null) as TaxReportState | null}
         />
@@ -915,6 +922,7 @@ type AdminWdRow = {
   amount: number;
   status: string;
   details: string;
+  adminComment?: string | null;
   user: { username: string | null; telegramId: string };
 };
 
@@ -1291,6 +1299,12 @@ function AdminUsersPanel({
   );
 }
 
+function normalizeLeadSt(status: string) {
+  if (status === "new" || status === "duplicate") return "processing";
+  if (status === "approved") return "awaiting_payout";
+  return status;
+}
+
 function AdminLeadsPanel({
   leads,
   onAction,
@@ -1301,38 +1315,123 @@ function AdminLeadsPanel({
   disabled?: boolean;
 }) {
   const [q, setQ] = useState("");
-  const [bucket, setBucket] = useState<"open" | "closed">("open");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "processing" | "awaiting_payout" | "paid" | "rejected"
+  >("all");
+  const [bankFilter, setBankFilter] = useState<string>("all");
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const banks = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of leads) {
+      const b = (l.product.bank || "").trim();
+      if (b) set.add(b);
+    }
+    return Array.from(set).sort();
+  }, [leads]);
+
+  const filteredLeads = useMemo(() => {
+    return leads.filter((l) => {
+      if (
+        !matchesUsernameQuery(
+          q,
+          l.client.username,
+          l.client.telegramId,
+          l.fullName
+        )
+      ) {
+        return false;
+      }
+      const st = normalizeLeadSt(l.status);
+      if (statusFilter !== "all" && st !== statusFilter) return false;
+      if (bankFilter !== "all") {
+        const b = (l.product.bank || "").trim();
+        if (b !== bankFilter) return false;
+      }
+      return true;
+    });
+  }, [leads, q, statusFilter, bankFilter]);
+
   const groups = useMemo(() => {
-    const matched = leads.filter((l) =>
-      matchesUsernameQuery(
-        q,
-        l.client.username,
-        l.client.telegramId,
-        l.fullName
-      )
-    );
     // Keep full чек together: include sibling lines of the same orderId
     const orderIds = new Set(
-      matched.map((l) => l.orderId).filter((x): x is string => Boolean(x))
+      filteredLeads.map((l) => l.orderId).filter((x): x is string => Boolean(x))
     );
     const withSiblings = leads.filter(
       (l) =>
-        matched.some((m) => m.id === l.id) ||
+        filteredLeads.some((m) => m.id === l.id) ||
         (l.orderId != null && orderIds.has(l.orderId))
     );
-    const allGroups = groupLeadsByOrder(withSiblings);
-    return allGroups.filter((g) => {
-      const anyOpen = g.lines.some((l) => !isClosedLead(l.status));
-      if (bucket === "open") return anyOpen;
-      return !anyOpen;
-    });
-  }, [leads, q, bucket]);
+    return groupLeadsByOrder(withSiblings);
+  }, [leads, filteredLeads]);
+
+  const filteredIds = useMemo(
+    () => filteredLeads.map((l) => l.id),
+    [filteredLeads]
+  );
+  const selectedIds = filteredIds.filter((id) => selected[id]);
+  const allFilteredSelected =
+    filteredIds.length > 0 && filteredIds.every((id) => selected[id]);
+
+  function toggleSelect(id: string) {
+    setSelected((s) => ({ ...s, [id]: !s[id] }));
+  }
+
+  function toggleSelectAll() {
+    if (allFilteredSelected) {
+      setSelected((s) => {
+        const next = { ...s };
+        for (const id of filteredIds) delete next[id];
+        return next;
+      });
+    } else {
+      setSelected((s) => {
+        const next = { ...s };
+        for (const id of filteredIds) next[id] = true;
+        return next;
+      });
+    }
+  }
+
+  async function runBulk(
+    status: "awaiting_payout" | "paid" | "rejected"
+  ) {
+    if (selectedIds.length === 0 || disabled || bulkBusy) return;
+    let comment: string | undefined;
+    if (status === "rejected") {
+      comment = String(prompt("Причина отказа") || "").trim();
+      if (!comment) {
+        alert("Нужна причина");
+        return;
+      }
+    }
+    setBulkBusy(true);
+    try {
+      await onAction({
+        action: "leads_bulk_status",
+        leadIds: selectedIds,
+        status,
+        comment,
+      });
+      setSelected({});
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  const statusChips: Array<[typeof statusFilter, string]> = [
+    ["all", "Все"],
+    ["processing", "В обработке"],
+    ["awaiting_payout", "Ждём выплату"],
+    ["paid", "Выплачено"],
+    ["rejected", "Отказ"],
+  ];
 
   return (
     <div className="tg-stack">
       <p className="tg-note-plate">
-        Заказы по продуктам. Чек группирует позиции — у каждой свой статус и
-        сумма. Открытые — в работе; закрытые — выплачено или отклонено.
+        Заказы по продуктам. Фильтр + массовый статус. Чек группирует позиции.
       </p>
       <input
         className="tg-input"
@@ -1341,21 +1440,58 @@ function AdminLeadsPanel({
         onChange={(e) => setQ(e.target.value)}
       />
       <div className="tg-admin-chips">
-        <button
-          type="button"
-          className={bucket === "open" ? "tg-chip tg-chip-active" : "tg-chip"}
-          onClick={() => setBucket("open")}
-        >
-          Открытые
-        </button>
-        <button
-          type="button"
-          className={bucket === "closed" ? "tg-chip tg-chip-active" : "tg-chip"}
-          onClick={() => setBucket("closed")}
-        >
-          Закрытые
-        </button>
+        {statusChips.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={
+              statusFilter === key ? "tg-chip tg-chip-active" : "tg-chip"
+            }
+            onClick={() => setStatusFilter(key)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
+      {banks.length > 0 ? (
+        <div className="tg-admin-chips">
+          <button
+            type="button"
+            className={
+              bankFilter === "all" ? "tg-chip tg-chip-active" : "tg-chip"
+            }
+            onClick={() => setBankFilter("all")}
+          >
+            Все банки
+          </button>
+          {banks.map((b) => (
+            <button
+              key={b}
+              type="button"
+              className={
+                bankFilter === b ? "tg-chip tg-chip-active" : "tg-chip"
+              }
+              onClick={() => setBankFilter(b)}
+            >
+              {b}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {filteredIds.length > 0 ? (
+        <label className="flex items-center gap-2 text-sm px-1">
+          <input
+            type="checkbox"
+            checked={allFilteredSelected}
+            disabled={disabled}
+            onChange={toggleSelectAll}
+          />
+          <span className="tg-muted text-xs">
+            Выбрать все в фильтре · {filteredIds.length}
+            {selectedIds.length > 0 ? ` · выбрано ${selectedIds.length}` : ""}
+          </span>
+        </label>
+      ) : null}
       {groups.length === 0 ? (
         <div className="tg-empty">Нет заказов</div>
       ) : (
@@ -1384,17 +1520,61 @@ function AdminLeadsPanel({
                 )}
               </div>
               {g.lines.map((l) => (
-                <AdminLeadLineControls
-                  key={l.id}
-                  l={l}
-                  onAction={onAction}
-                  disabled={disabled}
-                />
+                <div key={l.id} className="flex gap-2 items-start">
+                  <input
+                    type="checkbox"
+                    className="mt-4 shrink-0"
+                    checked={Boolean(selected[l.id])}
+                    disabled={disabled}
+                    onChange={() => toggleSelect(l.id)}
+                    aria-label="Выбрать позицию"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <AdminLeadLineControls
+                      l={l}
+                      onAction={onAction}
+                      disabled={disabled}
+                    />
+                  </div>
+                </div>
               ))}
             </div>
           );
         })
       )}
+      {selectedIds.length > 0 ? (
+        <div className="tg-bulk-sticky">
+          <p className="tg-muted text-xs mb-2">
+            Выбрано: {selectedIds.length}
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              type="button"
+              className="tg-btn-primary text-xs flex-1"
+              disabled={disabled || bulkBusy}
+              onClick={() => void runBulk("awaiting_payout")}
+            >
+              Ждём выплату
+            </button>
+            <button
+              type="button"
+              className="tg-btn-primary text-xs flex-1"
+              disabled={disabled || bulkBusy}
+              onClick={() => void runBulk("paid")}
+            >
+              Выплачено
+            </button>
+            <button
+              type="button"
+              className="tg-btn-secondary text-xs flex-1"
+              disabled={disabled || bulkBusy}
+              onClick={() => void runBulk("rejected")}
+            >
+              Отклонить
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1458,6 +1638,9 @@ function AdminWithdrawalsPanel({
                 {statusLabel(w.status)}
               </p>
               <p className="tg-muted text-xs mt-1">{w.details}</p>
+              {w.adminComment ? (
+                <p className="tg-muted text-xs mt-1">Причина: {w.adminComment}</p>
+              ) : null}
             </div>
             {!isClosedWithdrawal(w.status) ? (
               <div className="flex gap-2 flex-wrap">
@@ -1475,9 +1658,20 @@ function AdminWithdrawalsPanel({
                   type="button"
                   className="tg-btn-secondary text-xs"
                   disabled={disabled}
-                  onClick={() =>
-                    void onAction({ action: "wd_reject", id: w.id })
-                  }
+                  onClick={() => {
+                    const reason = String(
+                      prompt("Причина отклонения вывода (обязательно)") || ""
+                    ).trim();
+                    if (!reason) {
+                      alert("Нужна причина");
+                      return;
+                    }
+                    void onAction({
+                      action: "wd_reject",
+                      id: w.id,
+                      reason,
+                    });
+                  }}
                 >
                   Отклонить
                 </button>

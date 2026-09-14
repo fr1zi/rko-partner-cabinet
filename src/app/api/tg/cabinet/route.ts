@@ -239,8 +239,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Укажите реквизиты" }, { status: 400 });
     }
     const fresh = await prisma.botUser.findUnique({ where: { id: user.id } });
-    if (!fresh || amount > fresh.balance) {
-      return NextResponse.json({ error: "Недостаточно средств" }, { status: 400 });
+    const available = Number(fresh?.balance ?? 0);
+    if (!fresh || !Number.isFinite(available) || amount > available) {
+      return NextResponse.json(
+        {
+          error:
+            available > 0
+              ? `Недостаточно средств: доступно ${formatMoney(available)}, запрошено ${formatMoney(amount)}`
+              : "Недостаточно средств на балансе",
+        },
+        { status: 400 }
+      );
     }
     await prisma.$transaction([
       prisma.botUser.update({

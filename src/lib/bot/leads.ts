@@ -367,6 +367,7 @@ export async function setLeadStatus(opts: {
       premAmount > 0 &&
       (full.referrer?.role || "").toLowerCase() !== "admin";
     if (canCreditTraffer && full.referrerId) {
+      // No notify here — status DM below is the single message path
       await creditOnce({
         userId: full.referrerId,
         amount: premAmount,
@@ -374,12 +375,12 @@ export async function setLeadStatus(opts: {
         type: "credit_lead",
         comment: `Премия ${full.product.title}`,
         telegramId: full.referrer?.telegramId,
-        notify: `✅ ${full.product.title}: премия ${formatMoney(premAmount)}.`,
       });
     }
 
     // Always credit subscriber immediately (same as single-line).
     // Multi-line hold / claim-ready UX removed as unsafe.
+    // No credit notify — status DM below avoids double spam.
     if (subAmount) {
       await creditOnce({
         userId: full.clientId,
@@ -388,11 +389,6 @@ export async function setLeadStatus(opts: {
         type: "credit_sub",
         comment: `Выплата ${full.product.title}`,
         telegramId: full.client.telegramId,
-        notify:
-          `✅ ${full.product.title}: вам ${formatMoney(subAmount)}.\n` +
-          (next === "paid"
-            ? `Статус: выплачено.`
-            : `Статус: ждём выплату. Можно написать в ЛС или оставить заявку на вывод в кабинете.`),
       });
       await prisma.botLead.update({
         where: { id: full.id },
@@ -401,35 +397,50 @@ export async function setLeadStatus(opts: {
     }
   }
 
-  if (next === "rejected" && prev !== "rejected") {
+  // Status DMs only on real transition; one short line each (no creditOnce spam)
+  if (
+    prev !== next &&
+    (next === "awaiting_payout" || next === "paid" || next === "rejected")
+  ) {
+    const productLabel = full.product.title;
+    const amountLabel = formatMoney(subAmount);
+    let clientMsg = "";
+    if (next === "awaiting_payout") {
+      clientMsg = `✅ ${productLabel}: одобрено, ждём выплату ${amountLabel}`;
+    } else if (next === "paid") {
+      clientMsg = `💸 ${productLabel}: выплачено`;
+    } else {
+      const c = String(opts.comment || "").trim();
+      clientMsg = c
+        ? `❌ ${productLabel}: отказ. ${c}`
+        : `❌ ${productLabel}: отказ.`;
+    }
     try {
-      await sendMessage(
-        full.client.telegramId,
-        `❌ Заявка отклонена: ${full.product.title}. ${opts.comment || ""}`.trim()
-      );
+      await sendMessage(full.client.telegramId, clientMsg);
     } catch {
       /* blocked */
     }
-    if (full.referrer) {
+
+    const notifyReferrer =
+      !adminRef &&
+      full.referrer &&
+      (full.referrer.role || "").toLowerCase() !== "admin";
+    if (notifyReferrer && full.referrer) {
+      const handle = full.client.username
+        ? `@${String(full.client.username).replace(/^@/, "")}`
+        : `id ${full.client.telegramId}`;
+      const statusRu =
+        next === "awaiting_payout"
+          ? "ждём выплату"
+          : next === "paid"
+            ? "выплачено"
+            : "отказ";
+      const refMsg = `Реферал ${handle}: ${productLabel} → ${statusRu}`;
       try {
-        await sendMessage(
-          full.referrer.telegramId,
-          `❌ Заявка отклонена: ${full.product.title}.`
-        );
+        await sendMessage(full.referrer.telegramId, refMsg);
       } catch {
         /* blocked */
       }
-    }
-  }
-
-  if (next === "paid" && prev !== "paid") {
-    try {
-      await sendMessage(
-        full.client.telegramId,
-        `💸 ${full.product.title}: статус «выплачено». Если ещё не получили — напишите в ЛС или оставьте заявку на вывод.`
-      );
-    } catch {
-      /* blocked */
     }
   }
 

@@ -1052,3 +1052,17 @@ body {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+/* Sticky bar for bulk lead status actions */
+.tg-bulk-sticky {
+  position: sticky;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  z-index: 15;
+  padding: 10px 12px 8px;
+  margin: 0 -4px;
+  border-radius: 14px;
+  border: 1px solid var(--tg-line);
+  background: rgba(12, 19, 32, 0.96);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+}

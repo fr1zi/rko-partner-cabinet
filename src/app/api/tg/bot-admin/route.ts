@@ -29,6 +29,18 @@ import {
 import { buildTaxReportDocx } from "@/lib/bot/taxDocx";
 import { createProductOrder } from "@/lib/bot/orders";
 import { ensureHoldColumn } from "@/lib/bot/leads";
+import { buildAndSendDailyDigest } from "@/lib/bot/dailyDigest";
+
+
+async function ensureWithdrawalColumns() {
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "Withdrawal" ADD COLUMN IF NOT EXISTS "adminComment" TEXT`
+    );
+  } catch {
+    /* ignore */
+  }
+}
 
 async function requireChannelAdmin() {
   const session = await getSession();
@@ -71,6 +83,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ leads });
   }
   if (tab === "withdrawals") {
+    await ensureWithdrawalColumns();
     const withdrawals = await prisma.withdrawal.findMany({
       include: { user: true },
       orderBy: { createdAt: "desc" },
@@ -340,6 +353,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+
+  if (action === "leads_bulk_status") {
+    const leadIds: string[] = Array.isArray(body.leadIds)
+      ? body.leadIds.map(String).filter(Boolean)
+      : [];
+    let status = String(body.status || "");
+    if (!["awaiting_payout", "paid", "rejected"].includes(status)) {
+      return NextResponse.json({ error: "bad status" }, { status: 400 });
+    }
+    if (leadIds.length === 0) {
+      return NextResponse.json({ error: "нет leadIds" }, { status: 400 });
+    }
+    const amountRaw = body.subscriberAmount;
+    const subscriberAmount =
+      amountRaw === undefined || amountRaw === ""
+        ? undefined
+        : Number(amountRaw);
+    const comment = body.comment ? String(body.comment) : undefined;
+    let updated = 0;
+    const errors: Array<{ id: string; error: string }> = [];
+    for (const leadId of leadIds) {
+      const result = await setLeadStatus({
+        leadId,
+        status,
+        subscriberAmount,
+        comment,
+      });
+      if ("error" in result) {
+        errors.push({ id: leadId, error: String(result.error) });
+      } else {
+        updated += 1;
+      }
+    }
+    return NextResponse.json({ ok: true, updated, errors });
+  }
+
   if (action === "remove_order_line") {
     const leadId = String(body.leadId || body.id || "");
     const reason = String(body.reason || "").trim();
@@ -361,6 +410,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "wd_approve" || action === "wd_reject" || action === "wd_paid") {
+    await ensureWithdrawalColumns();
     const id = String(body.id || "");
     const full = await prisma.withdrawal.findUnique({
       where: { id },
@@ -378,11 +428,18 @@ export async function POST(req: NextRequest) {
         `Вывод ${formatMoney(full.amount)} одобрен.`
       );
     } else if (action === "wd_reject") {
+      const reason = String(body.reason || "").trim();
+      if (!reason) {
+        return NextResponse.json(
+          { error: "укажите причину отклонения" },
+          { status: 400 }
+        );
+      }
       if (full.status === "new" || full.status === "approved") {
         await prisma.$transaction([
           prisma.withdrawal.update({
             where: { id },
-            data: { status: "rejected" },
+            data: { status: "rejected", adminComment: reason },
           }),
           prisma.botUser.update({
             where: { id: full.userId },
@@ -397,10 +454,15 @@ export async function POST(req: NextRequest) {
             },
           }),
         ]);
+      } else {
+        await prisma.withdrawal.update({
+          where: { id },
+          data: { status: "rejected", adminComment: reason },
+        });
       }
       await sendMessage(
         full.user.telegramId,
-        `Вывод ${formatMoney(full.amount)} отклонён, средства возвращены.`
+        `❌ Вывод отклонён: ${reason}`
       );
     } else {
       await prisma.withdrawal.update({
@@ -540,6 +602,11 @@ export async function POST(req: NextRequest) {
       orderId: result.orderId,
       created: result.created.length,
     });
+  }
+
+  if (action === "send_daily_digest") {
+    const summary = await buildAndSendDailyDigest();
+    return NextResponse.json({ ok: true, ...summary });
   }
 
   return NextResponse.json({ error: "unknown action" }, { status: 400 });

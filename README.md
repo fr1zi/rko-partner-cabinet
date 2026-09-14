@@ -76,6 +76,11 @@ npm run telegram:poll
 | `POST /api/tg/auth` | initData HMAC → сессия |
 | `GET/POST /api/tg/cabinet` | Кабинет траффера (BotUser) |
 | `GET/POST /api/tg/bot-admin` | Админ Mini App (только админы канала) |
+| `GET/POST /api/cron/daily-digest` | Утренний дайджест админам (Vercel Cron 06:00 UTC) |
+
+## Cron / daily digest
+
+Vercel cron: `0 6 * * *` → `/api/cron/daily-digest` (≈ 09:00 МСК). Задайте **`CRON_SECRET`** в Vercel Environment Variables; запрос: `Authorization: Bearer <CRON_SECRET>` или `?secret=`. Без секрета в production — 401; в `NODE_ENV=development` без секрета разрешено. Ручной запуск: Mini App → Итоги → «Дайджест сейчас».
 
 ## Примечание
 
