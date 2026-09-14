@@ -92,6 +92,33 @@ export function ownerMarginFromPayouts(subscriber: number, traffer: number) {
   return ownerPayout(cpa);
 }
 
+/**
+ * Resolve payout legs from BotProduct fields.
+ * Legacy catalog stored bank CPA in BOTH reward and subscriberPrice.
+ */
+export function resolveProductPayouts(subscriberPrice: number, reward: number) {
+  const sub = Math.max(0, Number(subscriberPrice) || 0);
+  const prem = Math.max(0, Number(reward) || 0);
+  if (sub > 0 && Math.abs(sub - prem) < 0.01) {
+    const cpa = Math.round(sub);
+    return {
+      bankCpa: cpa,
+      subscriber: subscriberPayout(cpa),
+      traffer: trafferReward(cpa),
+      owner: ownerPayout(cpa),
+      legacy: true as const,
+    };
+  }
+  const cpa = estimateBankCpa(sub, prem);
+  return {
+    bankCpa: cpa,
+    subscriber: Math.round(sub),
+    traffer: Math.round(prem),
+    owner: ownerMarginFromPayouts(sub, prem),
+    legacy: false as const,
+  };
+}
+
 /** One BotProduct row per bank × product type. */
 export function catalogEntries() {
   const out: Array<{

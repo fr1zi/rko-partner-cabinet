@@ -6,6 +6,7 @@ import {
   estimateBankCpa,
   ownerMarginFromPayouts,
   ownerPayout,
+  resolveProductPayouts,
 } from "@/lib/productDefaults";
 import type { AdminSubTab } from "./types";
 import { LeaderboardList } from "./Leaderboard";
@@ -579,8 +580,21 @@ function AdminLeadsPanel({
               : l.status === "approved"
                 ? "awaiting_payout"
                 : l.status;
-          const defAmt = l.subscriberAmount ?? l.product.subscriberPrice ?? 0;
-          const prem = l.premiumAmount ?? l.product.reward ?? 0;
+          const split = resolveProductPayouts(
+            l.product.subscriberPrice ?? 0,
+            l.product.reward ?? 0
+          );
+          const rawSub = l.subscriberAmount;
+          const looksLikeLegacyCpa =
+            split.legacy &&
+            rawSub != null &&
+            Math.abs(Number(rawSub) - split.bankCpa) < 0.01;
+          const defAmt =
+            rawSub != null && rawSub > 0 && !looksLikeLegacyCpa
+              ? Number(rawSub)
+              : split.subscriber;
+          const prem = l.premiumAmount ?? split.traffer;
+          const ours = split.owner;
           const who = tgHandle(l.client.username, l.client.telegramId);
           const refName = l.referrer
             ? tgHandle(l.referrer.username, l.referrer.telegramId)
@@ -615,7 +629,8 @@ function AdminLeadsPanel({
                   id={`amt-${l.id}`}
                 />
                 <p className="tg-muted text-xs">
-                  Премия траффера: {money(prem)}
+                  Премия траффера: {money(prem)} · нам: {money(ours)} · CPA:{" "}
+                  {money(split.bankCpa)}
                 </p>
               </div>
               <div className="flex gap-2 flex-wrap">

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/telegram";
 import { formatMoney } from "@/lib/bot/users";
+import { resolveProductPayouts } from "@/lib/productDefaults";
 
 export const LEAD_STATUSES = [
   "processing",
@@ -79,11 +80,24 @@ export async function setLeadStatus(opts: {
   if (!full) return { error: "not found" as const };
 
   const prev = normalizeLeadStatus(full.status);
-  const subAmount =
+  const split = resolveProductPayouts(
+    full.product.subscriberPrice,
+    full.product.reward
+  );
+  let subAmount =
     opts.subscriberAmount !== undefined && Number.isFinite(opts.subscriberAmount)
       ? Math.max(0, Number(opts.subscriberAmount))
-      : full.subscriberAmount ?? full.product.subscriberPrice ?? 0;
-  const premAmount = full.premiumAmount ?? full.product.reward ?? 0;
+      : full.subscriberAmount ?? split.subscriber;
+  let premAmount = full.premiumAmount ?? split.traffer;
+  // Admin left the old full CPA in the field — apply 10/45/45.
+  if (
+    split.legacy &&
+    opts.subscriberAmount !== undefined &&
+    Math.abs(Number(opts.subscriberAmount) - split.bankCpa) < 0.01
+  ) {
+    subAmount = split.subscriber;
+    premAmount = split.traffer;
+  }
 
   const data: {
     status: string;
