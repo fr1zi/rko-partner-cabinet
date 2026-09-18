@@ -3,17 +3,24 @@ import { DEFAULT_PRODUCT_RATES } from "@/lib/productDefaults";
 
 export { DEFAULT_PRODUCT_RATES };
 
+/** Upsert catalog premiums so web ProductRate stays aligned with DEFAULT_PRODUCT_RATES. */
 export async function ensureProductRates() {
-  const count = await prisma.productRate.count();
-  if (count === 0) {
-    await prisma.productRate.createMany({
-      data: DEFAULT_PRODUCT_RATES.map((r) => ({
+  for (const r of DEFAULT_PRODUCT_RATES) {
+    await prisma.productRate.upsert({
+      where: { productKey: r.productKey },
+      update: {
+        productName: r.productName,
+        premium: r.premium,
+        sortOrder: r.sortOrder,
+        active: true,
+      },
+      create: {
         productKey: r.productKey,
         productName: r.productName,
         premium: r.premium,
         sortOrder: r.sortOrder,
         active: true,
-      })),
+      },
     });
   }
 }

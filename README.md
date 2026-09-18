@@ -63,7 +63,7 @@ npm run telegram:poll
 
 `BotUser`, `BotProduct`, `BotLead`, `LedgerTx`, `Withdrawal`, `ReferralClick`, `BotSession` — рядом с прежними `User` / `Partner` / `Client` / `Subscriber` (не переименовывались).
 
-Продукты по умолчанию (upsert): РКО 3500, дебет 1500, кредит 2500, эквайринг 2000, зарплатный 1800, депозит 1200.
+Продукты по умолчанию (upsert, bank CPA Sep 2026 mid-market): РКО 7500, дебет 1800, кредит 4000, эквайринг 2500, зарплатный 2500, депозит 1200.
 
 ## Веб-маршруты
 

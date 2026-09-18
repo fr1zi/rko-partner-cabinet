@@ -14,45 +14,56 @@ export const OWNER_SHARE_ADMIN_REF = 0.55;
 const ADMIN_INVITE_NAME = "ADMIN";
 
 /** `premium` = bank CPA (total payout from bank for one approved lead). */
+/**
+ * `premium` = bank CPA (₽) — conservative mid-market partner rates, Sep 2026.
+ * Flat per product type (same for Альфа / Т‑Банк / Сбер); see git commit notes for sources.
+ * Split: traffer 10% · subscriber 45% · owner 45%.
+ */
 export const DEFAULT_PRODUCT_RATES = [
   {
     productKey: "rko",
     productName: "РКО (открытие счёта)",
-    premium: 3500,
+    // Mid of T‑Банк from 8500, Альфа CPA ~9–12k, Сбер packages ~2.5–7.2k
+    premium: 7500,
     sortOrder: 1,
     age18: true,
   },
   {
     productKey: "debit_card",
     productName: "Дебетовая карта",
-    premium: 1500,
+    // AlfaPartners 1600–2000 (18+ = 2000 from 01.02.2026); Сбер business debit ~1000
+    premium: 1800,
     sortOrder: 2,
     age18: false,
   },
   {
     productKey: "credit_card",
     productName: "Кредитная карта",
-    premium: 2500,
+    // AlfaPartners up to 4800; conservative below max
+    premium: 4000,
     sortOrder: 3,
     age18: true,
   },
   {
     productKey: "acquiring",
     productName: "Эквайринг",
-    premium: 2000,
+    // Т‑Банк trade acquiring 3000; Сбер trade 1700
+    premium: 2500,
     sortOrder: 4,
     age18: false,
   },
   {
     productKey: "salary_project",
     productName: "Зарплатный проект",
-    premium: 1800,
+    // Conservative mid: Сбер up to 10k/project; Т‑Банк 300₽/card — project-level estimate
+    premium: 2500,
     sortOrder: 5,
     age18: false,
   },
   {
     productKey: "deposit",
     productName: "Депозит для бизнеса",
+    // Left unchanged — sparse public CPA for business deposits
     premium: 1200,
     sortOrder: 6,
     age18: false,

@@ -8,8 +8,8 @@ async function main() {
   // Minimal seed — never invent demo traffers/clients (that polluted admin UI on Neon)
   await prisma.settings.upsert({
     where: { id: "default" },
-    update: { defaultCommission: 3500 },
-    create: { id: "default", defaultCommission: 3500 },
+    update: { defaultCommission: 7500 },
+    create: { id: "default", defaultCommission: 7500 },
   });
 
   for (const r of DEFAULT_PRODUCT_RATES) {

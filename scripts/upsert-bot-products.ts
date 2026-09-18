@@ -20,9 +20,21 @@ async function main() {
           description: existing.description || entry.description,
           isActive: true,
           rewardType: "fixed",
+          reward: entry.reward,
+          subscriberPrice: entry.subscriberPrice,
         },
       });
-      console.log("keep", entry.bank, entry.title, existing.reward, existing.subscriberPrice);
+      console.log(
+        "update",
+        entry.bank,
+        entry.title,
+        "cpa",
+        entry.bankCpa,
+        "reward",
+        entry.reward,
+        "sub",
+        entry.subscriberPrice
+      );
     } else {
       await prisma.botProduct.create({
         data: {
