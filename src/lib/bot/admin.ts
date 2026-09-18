@@ -539,79 +539,130 @@ function pendingTelegramId(username: string) {
   return `pending:${username.replace(/^@/, "").toLowerCase()}`;
 }
 
+export type SetBotUserRoleOpts = {
+  /** Skip confirmation message to adminChatId (self-pick / internal). Default false. */
+  silentAdmin?: boolean;
+  /** Notify the target user about role change. Default true. */
+  notifyUser?: boolean;
+};
+
+/** Apply traffer promotion: role + optional named channel invite. No chat spam. */
+export async function promoteToTraffer(userId: string): Promise<{
+  user: {
+    id: string;
+    telegramId: string;
+    username: string | null;
+    firstName: string | null;
+    role: string;
+    isBanned: boolean;
+    inviteLink: string | null;
+    inviteLinkName: string | null;
+  };
+  ref: string;
+  inviteLine: string;
+  inviteNote: string;
+  isPending: boolean;
+}> {
+  let updated = await prisma.botUser.update({
+    where: { id: userId },
+    data: { role: "traffer", roleChosenAt: new Date() },
+  });
+  const isPending = updated.telegramId.startsWith("pending:");
+  const ref = isPending
+    ? "(ссылка появится после /start пользователя)"
+    : refLinkFor(updated.telegramId);
+  let inviteLine = "";
+  let inviteNote = "";
+  if (!isPending && isChannelInviteConfigured()) {
+    const shortCode = `t${updated.telegramId.slice(-8)}`;
+    const inv = await createNamedInviteLink(shortCode);
+    if ("inviteLink" in inv) {
+      inviteLine = `\nКанал (именная ссылка): ${inv.inviteLink}`;
+      inviteNote = `\nInvite: ${inv.inviteLink} (${inv.name})`;
+      updated = await prisma.botUser.update({
+        where: { id: updated.id },
+        data: {
+          inviteLink: inv.inviteLink,
+          inviteLinkName: inv.name || shortCode,
+        },
+      });
+    } else {
+      inviteNote = `\nInvite: не создан (${inv.error})`;
+    }
+  }
+  return { user: updated, ref, inviteLine, inviteNote, isPending };
+}
+
 /** Set BotUser.role to traffer|subscriber; notify user; refuse channel admins. */
 export async function setBotUserRole(
   target: { id: string; telegramId: string; username: string | null; role: string },
   nextRole: "traffer" | "subscriber",
-  adminChatId: number | string
+  adminChatId: number | string,
+  opts?: SetBotUserRoleOpts
 ): Promise<{ ok: boolean; error?: string }> {
+  const silentAdmin = opts?.silentAdmin === true;
+  const notifyUser = opts?.notifyUser !== false;
   const isPending = target.telegramId.startsWith("pending:");
   if (target.role === "admin") {
-    await sendMessage(
-      adminChatId,
-      "Нельзя менять роль администратора канала."
-    );
+    if (!silentAdmin) {
+      await sendMessage(
+        adminChatId,
+        "Нельзя менять роль администратора канала."
+      );
+    }
     return { ok: false, error: "admin" };
   }
   if (!isPending && (await isChannelAdmin(target.telegramId))) {
-    await sendMessage(
-      adminChatId,
-      "Нельзя менять роль администратора канала."
-    );
+    if (!silentAdmin) {
+      await sendMessage(
+        adminChatId,
+        "Нельзя менять роль администратора канала."
+      );
+    }
     return { ok: false, error: "admin" };
   }
 
-  const updated = await prisma.botUser.update({
-    where: { id: target.id },
-    data: { role: nextRole },
-  });
-
   let inviteNote = "";
   let userMsg = "";
+  let updatedTelegramId = target.telegramId;
+  let updatedUsername = target.username;
 
   if (nextRole === "traffer") {
-    const ref = isPending
-      ? "(ссылка появится после /start пользователя)"
-      : refLinkFor(updated.telegramId);
-    let inviteLine = "";
-    if (!isPending && isChannelInviteConfigured()) {
-      const shortCode = `t${updated.telegramId.slice(-8)}`;
-      const inv = await createNamedInviteLink(shortCode);
-      if ("inviteLink" in inv) {
-        inviteLine = `\nКанал (именная ссылка): ${inv.inviteLink}`;
-        inviteNote = `\nInvite: ${inv.inviteLink} (${inv.name})`;
-        await prisma.botUser.update({
-          where: { id: updated.id },
-          data: {
-            inviteLink: inv.inviteLink,
-            inviteLinkName: inv.name || shortCode,
-          },
-        });
-      } else {
-        inviteNote = `\nInvite: не создан (${inv.error})`;
-      }
-    }
+    const promoted = await promoteToTraffer(target.id);
+    updatedTelegramId = promoted.user.telegramId;
+    updatedUsername = promoted.user.username;
+    inviteNote = promoted.inviteNote;
     userMsg =
       `✅ Вам выдали роль траффера.\n\n` +
-      `🔗 Ваша реф-ссылка:\n<code>${ref}</code>` +
-      inviteLine +
+      `🔗 Ваша реф-ссылка:\n<code>${promoted.ref}</code>` +
+      promoted.inviteLine +
       `\n\nДелитесь ссылкой с ИП и ООО. Кабинет: /cabinet`;
-    await sendMessage(
-      adminChatId,
-      `Готово: ${updated.username || updated.telegramId} → траффер\nРеф: ${ref}${inviteNote}`
-    );
+    if (!silentAdmin) {
+      await sendMessage(
+        adminChatId,
+        `Готово: ${updatedUsername || updatedTelegramId} → траффер\nРеф: ${promoted.ref}${inviteNote}`
+      );
+    }
   } else {
+    const updated = await prisma.botUser.update({
+      where: { id: target.id },
+      data: { role: "subscriber", roleChosenAt: new Date() },
+    });
+    updatedTelegramId = updated.telegramId;
+    updatedUsername = updated.username;
     userMsg =
       "✅ Вам выдали роль подписчика.\n\nРеф-ссылка и вывод партнёра больше не доступны. Смотрите продукты и канал.";
-    await sendMessage(
-      adminChatId,
-      `Готово: ${updated.username || updated.telegramId} → подписчик`
-    );
+    if (!silentAdmin) {
+      await sendMessage(
+        adminChatId,
+        `Готово: ${updatedUsername || updatedTelegramId} → подписчик`
+      );
+    }
   }
 
-  if (!isPending) {
+  if (notifyUser && !isPending) {
     try {
-      await sendMessage(updated.telegramId, userMsg);
+      await sendMessage(updatedTelegramId, userMsg);
     } catch {
       /* blocked */
     }

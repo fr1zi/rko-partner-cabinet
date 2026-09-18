@@ -122,6 +122,7 @@ model BotUser {
   inviteLinkName String?
   balance        Float    @default(0)
   isBanned       Boolean  @default(false)
+  roleChosenAt   DateTime?
   createdAt      DateTime @default(now())
   leadsAsClient BotLead[] @relation("LeadClient")
   leadsAsRef    BotLead[] @relation("LeadRef")

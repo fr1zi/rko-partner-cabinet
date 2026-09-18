@@ -9,7 +9,7 @@ export type TgFrom = {
   last_name?: string;
 };
 
-/** Traffer ONLY when BotUser.role === "traffer" (admin assigns; never auto on /start). */
+/** Traffer ONLY when BotUser.role === "traffer" (admin assign or self-pick on /start). */
 export async function isTrafferBotUser(user: {
   role: string;
 }): Promise<boolean> {
@@ -52,7 +52,7 @@ export async function upsertBotUser(
         data.role = "subscriber";
       }
     }
-    // opts.role=traffer ignored here — promote only via admin setBotUserRole
+    // opts.role=traffer ignored here — promote via setBotUserRole / promoteToTraffer
 
     if (
       opts?.bindReferrerIfEmpty &&
@@ -101,7 +101,7 @@ export async function upsertBotUser(
     }
   }
 
-  // EVERY new user = subscriber (or admin if channel admin). Never auto-traffer.
+  // EVERY new user = subscriber (or admin if channel admin). Traffer via self-pick or admin.
   let role = "subscriber";
   if (channelAdmin) role = "admin";
   else if (opts?.role === "admin") role = "admin";

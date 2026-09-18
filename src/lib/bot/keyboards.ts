@@ -32,6 +32,18 @@ export function clientMenu(channelUrl: string): InlineKeyboard {
   };
 }
 
+
+export function rolePickMenu(): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: "Я траффер", callback_data: "r:traffer" },
+        { text: "Я подписчик", callback_data: "r:sub" },
+      ],
+    ],
+  };
+}
+
 export function adminMenu(): InlineKeyboard {
   return {
     inline_keyboard: [

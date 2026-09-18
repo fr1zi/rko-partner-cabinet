@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import {
   answerCallbackQuery,
   sendMessage,
+  editMessage,
   setBotCommands,
   ensureBotUx,
   setCommandsForUser,
@@ -14,6 +15,7 @@ import {
   type TgFrom,
 } from "@/lib/bot/users";
 import { clearScene, getSession, parsePayload } from "@/lib/bot/session";
+import { rolePickMenu } from "@/lib/bot/keyboards";
 import { showClientGreeting, showClientProducts, startLeadFsm, onClientPickProduct, handleClientText } from "@/lib/bot/client";
 import {
   showTrafferHome,
@@ -48,6 +50,8 @@ import {
   startAssignRole,
   setRoleByShort,
   handleRoleCommand,
+  promoteToTraffer,
+  setBotUserRole,
 } from "@/lib/bot/admin";
 import { isChannelAdmin } from "@/lib/bot/channelAdmins";
 import { ADMIN_INVITE_NAME, isAdminJoinSource } from "@/lib/bot/adminInvite";
@@ -295,6 +299,25 @@ async function handleLegacyPartnerRef(from: TgUser, refCodeRaw: string) {
   return partner;
 }
 
+
+async function showRolePicker(chatId: number | string, messageId?: number) {
+  const text =
+    "👋 Добро пожаловать!\n\n" +
+    "Кто вы? Выберите роль — это определит ваш кабинет.\n" +
+    "• <b>Траффер</b> — реф-ссылка, статистика и выплаты\n" +
+    "• <b>Подписчик</b> — продукты и канал";
+  const keyboard = rolePickMenu();
+  if (messageId) {
+    try {
+      await editMessage(chatId, messageId, text, { reply_markup: keyboard });
+      return;
+    } catch {
+      /* fallthrough */
+    }
+  }
+  await sendMessage(chatId, text, { reply_markup: keyboard });
+}
+
 async function handleStart(message: TgMessage) {
   const from = message.from;
   const chatId = message.chat?.id;
@@ -359,6 +382,12 @@ async function handleStart(message: TgMessage) {
     if (client.role === "admin" || (await isTrafferBotUser(client))) {
       await showTrafferHome(chatId, client);
     } else {
+      if (!client.roleChosenAt) {
+        await prisma.botUser.update({
+          where: { id: client.id },
+          data: { roleChosenAt: new Date() },
+        });
+      }
       await showClientGreeting(chatId, from);
     }
     return { type: "start_ref", referrerId: referrer?.id };
@@ -381,6 +410,11 @@ async function handleStart(message: TgMessage) {
   if (await isTrafferBotUser(user)) {
     await showTrafferHome(chatId, user);
     return { type: "start_traffer" };
+  }
+  // Ask role once for non-admin / non-traffer users (skip if already chose or ref_ path)
+  if (!user.roleChosenAt) {
+    await showRolePicker(chatId);
+    return { type: "start_role_pick" };
   }
   await showClientGreeting(chatId, from);
   return { type: "start_subscriber" };
@@ -413,6 +447,49 @@ async function routeCallback(cb: TgCallback) {
   await answerCallbackQuery(cb.id);
 
   if (data === "noop") return { type: "noop" };
+
+  // Role self-pick (before role gates)
+  if (data === "r:sub" || data === "r:traffer") {
+    const pickUser = await upsertBotUser(from);
+    if (pickUser.isBanned) {
+      await sendMessage(chatId, "доступ закрыт");
+      return { type: "banned" };
+    }
+    if (pickUser.role === "admin" || (await isChannelAdmin(telegramId))) {
+      await showAdminHome(chatId, messageId);
+      return { type: "r_admin" };
+    }
+    if (data === "r:sub") {
+      await setBotUserRole(pickUser, "subscriber", chatId, {
+        silentAdmin: true,
+        notifyUser: false,
+      });
+      await showClientGreeting(chatId, from, messageId);
+      return { type: "r_sub" };
+    }
+    // traffer self-pick
+    if (await isTrafferBotUser(pickUser) && pickUser.roleChosenAt) {
+      await showTrafferHome(chatId, pickUser, messageId);
+      return { type: "r_traffer_already" };
+    }
+    const promoted = await promoteToTraffer(pickUser.id);
+    const refText =
+      `✅ Вы выбрали роль траффера.\n\n` +
+      `🔗 Ваша реф-ссылка:\n<code>${promoted.ref}</code>` +
+      promoted.inviteLine +
+      `\n\nДелитесь ссылкой с ИП и ООО.`;
+    if (messageId) {
+      try {
+        await editMessage(chatId, messageId, refText);
+      } catch {
+        await sendMessage(chatId, refText);
+      }
+    } else {
+      await sendMessage(chatId, refText);
+    }
+    await showTrafferHome(chatId, promoted.user);
+    return { type: "r_traffer" };
+  }
 
   const user = await upsertBotUser(from);
   if (user.isBanned) {
