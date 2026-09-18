@@ -63,7 +63,7 @@ npm run telegram:poll
 
 `BotUser`, `BotProduct`, `BotLead`, `LedgerTx`, `Withdrawal`, `ReferralClick`, `BotSession` — рядом с прежними `User` / `Partner` / `Client` / `Subscriber` (не переименовывались).
 
-Продукты по умолчанию (upsert, bank CPA Sep 2026 mid-market): РКО 7500, дебет 1800, кредит 4000, эквайринг 2500, зарплатный 2500, депозит 1200.
+Продукты по умолчанию (upsert, **per-bank** CPA Sep 2026): Альфа РКО 12500 / дебет 2000 / кредит 4800 / эквайринг 2500 / ЗП 3000 / депозит 1200; Т‑Банк РКО 8500 / 1400 / 4000 / 3000 / 2500 / 1200; Сбер РКО 5000 / 900 / 2500 / 1700 / 5000 / 1200. ProductRate keys: `{bank}_{type}` (e.g. `alfa_rko`). Split 10/45/45.
 
 ## Веб-маршруты
 

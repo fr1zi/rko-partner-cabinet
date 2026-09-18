@@ -1,10 +1,15 @@
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_PRODUCT_RATES } from "@/lib/productDefaults";
+import {
+  DEFAULT_PRODUCT_RATES,
+  LEGACY_FLAT_PRODUCT_KEYS,
+} from "@/lib/productDefaults";
 
 export { DEFAULT_PRODUCT_RATES };
 
 /** Upsert catalog premiums so web ProductRate stays aligned with DEFAULT_PRODUCT_RATES. */
 export async function ensureProductRates() {
+  const catalogKeys = new Set(DEFAULT_PRODUCT_RATES.map((r) => r.productKey));
+
   for (const r of DEFAULT_PRODUCT_RATES) {
     await prisma.productRate.upsert({
       where: { productKey: r.productKey },
@@ -23,6 +28,18 @@ export async function ensureProductRates() {
       },
     });
   }
+
+  // Remove pre–per-bank flat rows (rko, debit_card, …); deactivate other stale keys.
+  await prisma.productRate.deleteMany({
+    where: { productKey: { in: [...LEGACY_FLAT_PRODUCT_KEYS] } },
+  });
+  await prisma.productRate.updateMany({
+    where: {
+      productKey: { notIn: Array.from(catalogKeys) },
+      active: true,
+    },
+    data: { active: false },
+  });
 }
 
 export async function getActiveProductRates() {

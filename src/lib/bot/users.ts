@@ -165,7 +165,7 @@ export async function resolveUserShort(short: string) {
 }
 
 /** Bump to force a one-shot re-apply of catalog 10/45/45 on warm instances. */
-const CATALOG_SYNC_VERSION = 4;
+const CATALOG_SYNC_VERSION = 5;
 let productsEnsuredVersion = 0;
 
 export async function ensureBotProducts(): Promise<void> {

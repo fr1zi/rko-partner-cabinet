@@ -1,4 +1,4 @@
-import { BANKS } from "./banks";
+import { BANKS, type BankKey } from "./banks";
 
 /** Bank CPA split: traffer 10% · subscriber 45% · owner 45%. */
 export const TRAFFER_SHARE = 0.1;
@@ -13,62 +13,104 @@ export const OWNER_SHARE_ADMIN_REF = 0.55;
 
 const ADMIN_INVITE_NAME = "ADMIN";
 
-/** `premium` = bank CPA (total payout from bank for one approved lead). */
-/**
- * `premium` = bank CPA (₽) — conservative mid-market partner rates, Sep 2026.
- * Flat per product type (same for Альфа / Т‑Банк / Сбер); see git commit notes for sources.
- * Split: traffer 10% · subscriber 45% · owner 45%.
- */
-export const DEFAULT_PRODUCT_RATES = [
+export const PRODUCT_TYPE_KEYS = [
+  "rko",
+  "debit_card",
+  "credit_card",
+  "acquiring",
+  "salary_project",
+  "deposit",
+] as const;
+
+export type ProductTypeKey = (typeof PRODUCT_TYPE_KEYS)[number];
+
+/** Product-type metadata (shared across banks). */
+export const PRODUCT_TYPES = [
   {
-    productKey: "rko",
+    productKey: "rko" as const,
     productName: "РКО (открытие счёта)",
-    // Mid of T‑Банк from 8500, Альфа CPA ~9–12k, Сбер packages ~2.5–7.2k
-    premium: 7500,
     sortOrder: 1,
     age18: true,
   },
   {
-    productKey: "debit_card",
+    productKey: "debit_card" as const,
     productName: "Дебетовая карта",
-    // AlfaPartners 1600–2000 (18+ = 2000 from 01.02.2026); Сбер business debit ~1000
-    premium: 1800,
     sortOrder: 2,
     age18: false,
   },
   {
-    productKey: "credit_card",
+    productKey: "credit_card" as const,
     productName: "Кредитная карта",
-    // AlfaPartners up to 4800; conservative below max
-    premium: 4000,
     sortOrder: 3,
     age18: true,
   },
   {
-    productKey: "acquiring",
+    productKey: "acquiring" as const,
     productName: "Эквайринг",
-    // Т‑Банк trade acquiring 3000; Сбер trade 1700
-    premium: 2500,
     sortOrder: 4,
     age18: false,
   },
   {
-    productKey: "salary_project",
+    productKey: "salary_project" as const,
     productName: "Зарплатный проект",
-    // Conservative mid: Сбер up to 10k/project; Т‑Банк 300₽/card — project-level estimate
-    premium: 2500,
     sortOrder: 5,
     age18: false,
   },
   {
-    productKey: "deposit",
+    productKey: "deposit" as const,
     productName: "Депозит для бизнеса",
-    // Left unchanged — sparse public CPA for business deposits
-    premium: 1200,
     sortOrder: 6,
     age18: false,
   },
 ] as const;
+
+/**
+ * Per-bank CPA (₽) — Sep 2026 public partner/CPA midpoints (integer).
+ * Sources (commit/README): AlfaPartners / Pampadu OOO; tbank.ru partnership;
+ * SberSolutions oferta / Sravni partner sheets. Weak estimates flagged in comments.
+ * Split: traffer 10% · subscriber 45% · owner 45%.
+ */
+export const BANK_PRODUCT_CPA: Record<
+  BankKey,
+  Record<ProductTypeKey, number>
+> = {
+  // Альфа-Банк: Alfa РКО status_sale / Pampadu ~12533 → 12500;
+  // AlfaPartners debit 18+ up to 2000; credit up to 4800;
+  // acquiring conservative (MGCom); salary mid estimate; deposit sparse.
+  alfa: {
+    rko: 12500,
+    debit_card: 2000,
+    credit_card: 4800,
+    acquiring: 2500,
+    salary_project: 3000, // weak estimate
+    deposit: 1200,
+  },
+  // Т-Банк: tbank.ru partnership from 8500; debit S7/activation ~1275–1400;
+  // credit Platinum-class ~4032 → 4000; trade acquiring 3000;
+  // salary ~300/card → project-level catalog CPA 2500; deposit sparse.
+  tbank: {
+    rko: 8500,
+    debit_card: 1400,
+    credit_card: 4000,
+    acquiring: 3000,
+    salary_project: 2500, // project-level Mini App catalog (not per-card)
+    deposit: 1200,
+  },
+  // Сбербанк: SberSolutions 2500 base / packages ~7200 → mid 5000;
+  // debit Sravni ~700–1000 → 900; credit conservative (weak public);
+  // acquiring Sravni ~1700; salary Sravni up to 10000 → mid 5000; deposit sparse.
+  sber: {
+    rko: 5000,
+    debit_card: 900,
+    credit_card: 2500, // weak public — conservative
+    acquiring: 1700,
+    salary_project: 5000,
+    deposit: 1200,
+  },
+};
+
+/** Legacy flat productKey values (pre per-bank catalog) — deactivated on sync. */
+export const LEGACY_FLAT_PRODUCT_KEYS: readonly string[] = [...PRODUCT_TYPE_KEYS];
 
 export const PRODUCT_TITLE_BY_KEY: Record<string, string> = {
   rko: "РКО (открытие счёта)",
@@ -78,6 +120,39 @@ export const PRODUCT_TITLE_BY_KEY: Record<string, string> = {
   salary_project: "Зарплатный проект",
   deposit: "Депозит для бизнеса",
 };
+
+export type DefaultProductRate = {
+  /** Unique ProductRate key: `${bankKey}_${typeKey}` e.g. alfa_rko */
+  productKey: string;
+  productName: string;
+  premium: number;
+  sortOrder: number;
+  age18: boolean;
+  bank: string;
+  bankKey: BankKey;
+  typeKey: ProductTypeKey;
+};
+
+/** One ProductRate / catalog row per bank × product type. */
+export const DEFAULT_PRODUCT_RATES: readonly DefaultProductRate[] = (() => {
+  const out: DefaultProductRate[] = [];
+  for (const t of PRODUCT_TYPES) {
+    BANKS.forEach((bank, bankIdx) => {
+      const premium = BANK_PRODUCT_CPA[bank.key][t.productKey];
+      out.push({
+        productKey: `${bank.key}_${t.productKey}`,
+        productName: `${t.productName} · ${bank.label}`,
+        premium,
+        sortOrder: t.sortOrder * 10 + bankIdx,
+        age18: t.age18,
+        bank: bank.label,
+        bankKey: bank.key,
+        typeKey: t.productKey,
+      });
+    });
+  }
+  return out;
+})();
 
 export function trafferReward(cpa: number) {
   return Math.round(cpa * TRAFFER_SHARE);
@@ -215,33 +290,22 @@ export function resolveProductPayouts(
   };
 }
 
-/** One BotProduct row per bank × product type. */
+/** One BotProduct row per bank × product type (uses per-bank CPA). */
 export function catalogEntries() {
-  const out: Array<{
-    title: string;
-    bank: string;
-    description: string;
-    reward: number;
-    subscriberPrice: number;
-    ownerMargin: number;
-    bankCpa: number;
-    sortKey: string;
-  }> = [];
-  for (const bank of BANKS) {
-    for (const r of DEFAULT_PRODUCT_RATES) {
-      const title = PRODUCT_TITLE_BY_KEY[r.productKey] || r.productName;
-      const age = "age18" in r && r.age18 ? " 18+" : "";
-      out.push({
-        title,
-        bank: bank.label,
-        description: `${r.productName} · ${bank.label}${age}`,
-        reward: trafferReward(r.premium),
-        subscriberPrice: subscriberPayout(r.premium),
-        ownerMargin: ownerPayout(r.premium),
-        bankCpa: r.premium,
-        sortKey: `${r.sortOrder}-${bank.key}`,
-      });
-    }
-  }
-  return out;
+  return DEFAULT_PRODUCT_RATES.map((r) => {
+    const title = PRODUCT_TITLE_BY_KEY[r.typeKey] || r.productName;
+    const age = r.age18 ? " 18+" : "";
+    return {
+      title,
+      bank: r.bank,
+      description: `${PRODUCT_TITLE_BY_KEY[r.typeKey] || r.typeKey} · ${r.bank}${age}`,
+      reward: trafferReward(r.premium),
+      subscriberPrice: subscriberPayout(r.premium),
+      ownerMargin: ownerPayout(r.premium),
+      bankCpa: r.premium,
+      sortKey: `${r.sortOrder}`,
+      productKey: r.productKey,
+      typeKey: r.typeKey,
+    };
+  });
 }
