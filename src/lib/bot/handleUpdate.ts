@@ -411,7 +411,7 @@ async function handleStart(message: TgMessage) {
     await showTrafferHome(chatId, user);
     return { type: "start_traffer" };
   }
-  // Ask role once for non-admin / non-traffer users (skip if already chose or ref_ path)
+  // Only brand-new users (roleChosenAt null). Existing subscribers were backfilled — no self-promote.
   if (!user.roleChosenAt) {
     await showRolePicker(chatId);
     return { type: "start_role_pick" };
@@ -448,7 +448,7 @@ async function routeCallback(cb: TgCallback) {
 
   if (data === "noop") return { type: "noop" };
 
-  // Role self-pick (before role gates)
+  // Role self-pick (only brand-new users with roleChosenAt == null)
   if (data === "r:sub" || data === "r:traffer") {
     const pickUser = await upsertBotUser(from);
     if (pickUser.isBanned) {
@@ -459,6 +459,23 @@ async function routeCallback(cb: TgCallback) {
       await showAdminHome(chatId, messageId);
       return { type: "r_admin" };
     }
+    // Already chose / was subscriber before: only admin can make traffer
+    if (pickUser.roleChosenAt) {
+      if (await isTrafferBotUser(pickUser)) {
+        await showTrafferHome(chatId, pickUser, messageId);
+        return { type: "r_already_traffer" };
+      }
+      if (data === "r:traffer") {
+        await sendMessage(
+          chatId,
+          "Стать траффером можно только по назначению админа. Напишите админу канала."
+        );
+        await showClientGreeting(chatId, from, messageId);
+        return { type: "r_traffer_denied" };
+      }
+      await showClientGreeting(chatId, from, messageId);
+      return { type: "r_already_sub" };
+    }
     if (data === "r:sub") {
       await setBotUserRole(pickUser, "subscriber", chatId, {
         silentAdmin: true,
@@ -467,11 +484,7 @@ async function routeCallback(cb: TgCallback) {
       await showClientGreeting(chatId, from, messageId);
       return { type: "r_sub" };
     }
-    // traffer self-pick
-    if (await isTrafferBotUser(pickUser) && pickUser.roleChosenAt) {
-      await showTrafferHome(chatId, pickUser, messageId);
-      return { type: "r_traffer_already" };
-    }
+    // New user self-pick → traffer
     const promoted = await promoteToTraffer(pickUser.id);
     const refText =
       `✅ Вы выбрали роль траффера.\n\n` +
